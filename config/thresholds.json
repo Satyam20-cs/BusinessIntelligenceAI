@@ -1,0 +1,6 @@
+{
+  "material_change_pct": 5,
+  "critical_change_pct": 10,
+  "min_history_days_for_anomaly": 28,
+  "low_confidence_threshold": 0.55
+}

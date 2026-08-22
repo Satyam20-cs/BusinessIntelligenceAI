@@ -1,0 +1,17 @@
+{
+  "normal": {
+    "name": "Material Revenue Decline",
+    "description": "A multi-factor decline with sufficient evidence.",
+    "confidence_override": 0.84
+  },
+  "low_confidence": {
+    "name": "Low Confidence \u2014 Missing Inventory",
+    "description": "Inventory data is unavailable for much of the analysis period.",
+    "confidence_override": 0.38
+  },
+  "sparse_history": {
+    "name": "Sparse History \u2014 New Product",
+    "description": "A newly launched product has too little history for a reliable baseline.",
+    "confidence_override": 0.42
+  }
+}

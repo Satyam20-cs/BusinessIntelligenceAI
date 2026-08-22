@@ -1,0 +1,27 @@
+{
+  "Business Head": {
+    "focus": "business impact, top drivers, decisions and actions",
+    "detail": "concise executive summary with business impact and owner",
+    "allowed_fields": [
+      "KPI",
+      "change",
+      "top_drivers",
+      "confidence",
+      "action",
+      "owner"
+    ]
+  },
+  "Business Analyst": {
+    "focus": "evidence, calculations, statistical support, alternatives and lineage",
+    "detail": "analytical explanation with methods, evidence quality and uncertainty",
+    "allowed_fields": [
+      "KPI",
+      "change",
+      "top_drivers",
+      "confidence",
+      "methods",
+      "evidence",
+      "lineage"
+    ]
+  }
+}
