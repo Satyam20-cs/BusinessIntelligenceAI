@@ -199,6 +199,3 @@ pytest tests/
 - **SciPy / scikit-learn** — statistical analysis
 - **OpenAI API** — optional narrative generation
 
-## 13. License
-
-Add your license here (e.g., MIT).
