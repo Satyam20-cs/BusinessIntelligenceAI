@@ -1,3 +1,6 @@
+import html
+import textwrap
+
 import pandas as pd
 import plotly.express as px
 import streamlit as st
@@ -14,357 +17,565 @@ from engine.action_engine import recommend_actions
 from evidence.lineage import lineage_rows
 from feedback.feedback import save_feedback, load_feedback
 from ai.narrative import generate
-from telemetry.metrics import make
 
+
+# =========================================================
+# CONFIG
+# =========================================================
 
 load_dotenv()
 
 st.set_page_config(
     page_title="InsightX",
-    page_icon="",
+    page_icon="●",
     layout="wide",
     initial_sidebar_state="expanded",
 )
 
 
-st.markdown(
+# =========================================================
+# HTML HELPERS
+# IMPORTANT: use st.html instead of st.markdown for HTML
+# =========================================================
+
+def render_html(content):
+    """Render HTML safely using Streamlit's native HTML renderer."""
+    st.html(textwrap.dedent(content).strip())
+
+
+# =========================================================
+# GLOBAL CSS
+# =========================================================
+
+render_html(
     """
     <style>
 
+    :root {
+        --bg: #070a0f;
+        --panel: #0c1118;
+        --panel-2: #101720;
+        --border: #1d2a38;
+        --border-soft: #16212d;
+        --text: #edf4fb;
+        --muted: #7f91a5;
+        --blue: #4da3ff;
+        --blue-soft: #13283d;
+        --green: #35d39a;
+        --red: #ff5c63;
+        --yellow: #f2bd55;
+    }
 
     html {
         scroll-behavior: smooth;
     }
 
+    body {
+        background: var(--bg);
+    }
+
     .stApp {
-        background: #fafafa;
+        background:
+            radial-gradient(
+                circle at 80% -10%,
+                rgba(44, 122, 255, 0.08),
+                transparent 28%
+            ),
+            var(--bg);
+        color: var(--text);
     }
 
     .block-container {
-        max-width: 1280px;
-        padding-top: 2rem;
-        padding-bottom: 5rem;
+        max-width: 1380px;
+        padding-top: 2.2rem;
+        padding-bottom: 6rem;
     }
-
-    /* Remove excessive Streamlit spacing */
-
-    div[data-testid="stVerticalBlock"] {
-        gap: 0.75rem;
-    }
-
 
     section[data-testid="stSidebar"] {
-        background: #ffffff;
-        border-right: 1px solid #e8e8e8;
+        background: #080c12;
+        border-right: 1px solid var(--border);
     }
 
     section[data-testid="stSidebar"] > div {
-        padding-top: 1.5rem;
+        padding: 1.5rem 1.1rem 2rem 1.1rem;
     }
 
+    section[data-testid="stSidebar"] * {
+        color: var(--text);
+    }
+
+    div[data-testid="stVerticalBlock"] {
+        gap: 0.65rem;
+    }
+
+    .brand-wrap {
+        padding: 0.3rem 0.15rem 1.25rem 0.15rem;
+    }
+
+    .brand-row {
+        display: flex;
+        align-items: center;
+        gap: 9px;
+    }
+
+    .brand-dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        background: var(--blue);
+        box-shadow: 0 0 0 4px rgba(77,163,255,0.10);
+    }
 
     .brand {
         font-size: 18px;
-        font-weight: 700;
-        letter-spacing: -0.4px;
-        color: #111111;
+        font-weight: 750;
+        letter-spacing: -0.5px;
     }
 
     .brand-subtitle {
-        font-size: 12px;
-        color: #8a8a8a;
-        margin-top: 2px;
+        margin-top: 7px;
+        color: var(--muted);
+        font-size: 11px;
     }
 
+    .sidebar-label {
+        margin: 1.25rem 0 0.55rem;
+        color: #71869c;
+        font-size: 10px;
+        font-weight: 700;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+    }
 
-    .topbar {
-        display: flex;
-        justify-content: space-between;
-        align-items: flex-end;
-        margin-bottom: 2rem;
-        padding-bottom: 1rem;
-        border-bottom: 1px solid #e9e9e9;
+    .sidebar-card {
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 13px;
+        margin-top: 10px;
+    }
+
+    .sidebar-card-title {
+        font-size: 12px;
+        font-weight: 650;
+        color: var(--text);
+    }
+
+    .sidebar-card-copy {
+        margin-top: 5px;
+        color: var(--muted);
+        font-size: 10px;
+        line-height: 1.5;
+    }
+
+    .data-dot {
+        display: inline-block;
+        width: 6px;
+        height: 6px;
+        margin-right: 6px;
+        border-radius: 50%;
+        background: var(--green);
+    }
+
+    .page-kicker {
+        color: #5e86ad;
+        font-size: 10px;
+        font-weight: 750;
+        letter-spacing: 0.18em;
+        text-transform: uppercase;
+        margin-bottom: 7px;
     }
 
     .page-title {
+        color: var(--text);
         font-size: 32px;
-        font-weight: 700;
-        letter-spacing: -1px;
-        color: #111111;
+        line-height: 1.1;
+        font-weight: 760;
+        letter-spacing: -1.1px;
         margin: 0;
     }
 
     .page-subtitle {
-        color: #777777;
-        font-size: 14px;
-        margin-top: 5px;
-    }
-
-
-    .section-label {
-        font-size: 11px;
-        font-weight: 700;
-        letter-spacing: 0.08em;
-        text-transform: uppercase;
-        color: #8a8a8a;
-        margin-top: 2rem;
-        margin-bottom: 0.75rem;
-    }
-
-    .section-title {
-        font-size: 21px;
-        font-weight: 650;
-        letter-spacing: -0.4px;
-        color: #171717;
-        margin-bottom: 0.15rem;
-    }
-
-    .section-description {
+        color: var(--muted);
         font-size: 13px;
-        color: #777777;
-        margin-bottom: 1rem;
-    }
-
-
-    .kpi-card {
-        background: #ffffff;
-        border: 1px solid #e8e8e8;
-        border-radius: 12px;
-        padding: 18px;
-        min-height: 112px;
-    }
-
-    .kpi-name {
-        font-size: 12px;
-        color: #777777;
-        margin-bottom: 10px;
-    }
-
-    .kpi-value {
-        font-size: 25px;
-        font-weight: 700;
-        letter-spacing: -0.6px;
-        color: #161616;
-    }
-
-    .kpi-change-negative {
-        color: #b42318;
-        font-size: 12px;
-        font-weight: 600;
-        margin-top: 5px;
-    }
-
-    .kpi-change-positive {
-        color: #18794e;
-        font-size: 12px;
-        font-weight: 600;
-        margin-top: 5px;
-    }
-
-    .kpi-change-neutral {
-        color: #777777;
-        font-size: 12px;
-        margin-top: 5px;
-    }
-
-
-    .insight-card {
-        background: #ffffff;
-        border: 1px solid #dedede;
-        border-radius: 14px;
-        padding: 24px;
-        margin-top: 8px;
-    }
-
-    .insight-status {
-        font-size: 11px;
-        font-weight: 700;
-        text-transform: uppercase;
-        letter-spacing: 0.08em;
-        color: #b42318;
-        margin-bottom: 10px;
-    }
-
-    .insight-title {
-        font-size: 24px;
-        line-height: 1.25;
-        font-weight: 650;
-        letter-spacing: -0.6px;
-        color: #161616;
-    }
-
-    .insight-copy {
-        color: #666666;
-        font-size: 14px;
         line-height: 1.6;
         margin-top: 8px;
     }
 
-    .confidence-box {
-        background: #f6f6f6;
-        border-radius: 10px;
-        padding: 14px 16px;
-        margin-top: 15px;
+    .topbar {
+        padding-bottom: 1.4rem;
+        margin-bottom: 1.7rem;
+        border-bottom: 1px solid var(--border);
+    }
+
+    .period-pill {
+        display: inline-flex;
+        align-items: center;
+        margin-top: 13px;
+        padding: 6px 10px;
+        border: 1px solid var(--border);
+        border-radius: 7px;
+        background: #0b1118;
+        color: #87a3bd;
+        font-size: 10px;
+    }
+
+    .section-label {
+        margin-top: 1.7rem;
+        margin-bottom: 0.7rem;
+        color: #5d85ae;
+        font-size: 10px;
+        font-weight: 750;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+    }
+
+    .section-title {
+        color: var(--text);
+        font-size: 20px;
+        font-weight: 700;
+        letter-spacing: -0.5px;
+        margin-bottom: 4px;
+    }
+
+    .section-description {
+        color: var(--muted);
+        font-size: 12px;
+        margin-bottom: 12px;
+    }
+
+    .kpi-card {
+        background: linear-gradient(
+            180deg,
+            rgba(14,21,30,0.98),
+            rgba(10,15,22,0.98)
+        );
+        border: 1px solid var(--border);
+        border-radius: 11px;
+        padding: 17px;
+        min-height: 112px;
+        box-sizing: border-box;
+        transition:
+            transform 160ms ease,
+            border-color 160ms ease,
+            background 160ms ease;
+    }
+
+    .kpi-card:hover {
+        transform: translateY(-2px);
+        border-color: #29445e;
+        background: #0e151e;
+    }
+
+    .kpi-name {
+        color: #7890a7;
+        font-size: 10px;
+        font-weight: 600;
+        margin-bottom: 12px;
+    }
+
+    .kpi-value {
+        color: #f1f7fd;
+        font-size: 24px;
+        font-weight: 760;
+        letter-spacing: -0.7px;
+    }
+
+    .kpi-change-negative,
+    .kpi-change-positive,
+    .kpi-change-neutral {
+        margin-top: 7px;
+        font-size: 10px;
+        font-weight: 650;
+    }
+
+    .kpi-change-negative {
+        color: var(--red);
+    }
+
+    .kpi-change-positive {
+        color: var(--green);
+    }
+
+    .kpi-change-neutral {
+        color: var(--muted);
+    }
+
+    .signal-card {
+        background:
+            linear-gradient(
+                135deg,
+                rgba(22, 53, 83, 0.65),
+                rgba(10, 16, 24, 0.98) 55%
+            );
+        border: 1px solid #214564;
+        border-radius: 12px;
+        padding: 24px;
+        min-height: 190px;
+        box-sizing: border-box;
+    }
+
+    .signal-status {
+        color: var(--blue);
+        font-size: 10px;
+        font-weight: 750;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        margin-bottom: 12px;
+    }
+
+    .signal-title {
+        color: var(--text);
+        font-size: 25px;
+        line-height: 1.25;
+        font-weight: 740;
+        letter-spacing: -0.7px;
+    }
+
+    .signal-copy {
+        color: #91a4b7;
+        font-size: 13px;
+        line-height: 1.65;
+        margin-top: 11px;
+    }
+
+    .signal-copy strong {
+        color: #dce8f3;
+    }
+
+    .confidence-card {
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 24px;
+        min-height: 190px;
+        box-sizing: border-box;
     }
 
     .confidence-label {
-        font-size: 11px;
-        color: #777777;
+        color: #7890a7;
+        font-size: 10px;
+        font-weight: 700;
+        letter-spacing: 0.14em;
         text-transform: uppercase;
-        letter-spacing: 0.06em;
     }
 
     .confidence-value {
-        font-size: 22px;
-        font-weight: 700;
-        color: #161616;
+        margin-top: 12px;
+        color: var(--text);
+        font-size: 35px;
+        font-weight: 760;
+        letter-spacing: -1px;
     }
 
-    .driver-row {
-        padding: 13px 0;
-        border-bottom: 1px solid #eeeeee;
+    .confidence-status {
+        display: inline-block;
+        margin-top: 10px;
+        padding: 5px 8px;
+        border-radius: 6px;
+        background: #102336;
+        color: #76b8f5;
+        font-size: 10px;
+        font-weight: 700;
+    }
+
+    .card {
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 20px;
+        box-sizing: border-box;
+    }
+
+    .driver-card {
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 15px;
+        min-height: 125px;
+        box-sizing: border-box;
+    }
+
+    .driver-label {
+        color: #6287a9;
+        font-size: 9px;
+        font-weight: 700;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
     }
 
     .driver-name {
+        color: var(--text);
+        font-size: 17px;
+        font-weight: 700;
+        margin-top: 9px;
+    }
+
+    .driver-value {
+        color: #c8d7e6;
         font-size: 13px;
-        font-weight: 600;
-        color: #222222;
+        margin-top: 6px;
     }
 
-    .driver-meta {
-        font-size: 11px;
-        color: #888888;
-        margin-top: 3px;
+    .driver-share {
+        color: var(--muted);
+        font-size: 10px;
+        margin-top: 7px;
     }
-
 
     .action-card {
-        background: #ffffff;
-        border: 1px solid #e5e5e5;
-        border-radius: 12px;
-        padding: 18px;
-        margin-bottom: 10px;
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-left: 2px solid var(--blue);
+        border-radius: 10px;
+        padding: 18px 20px;
+        margin-bottom: 9px;
+        box-sizing: border-box;
+        transition:
+            border-color 160ms ease,
+            transform 160ms ease;
+    }
+
+    .action-card:hover {
+        transform: translateX(2px);
+        border-color: #31516d;
     }
 
     .action-priority {
-        font-size: 10px;
-        font-weight: 700;
+        color: #6192bd;
+        font-size: 9px;
+        font-weight: 750;
+        letter-spacing: 0.14em;
         text-transform: uppercase;
-        letter-spacing: 0.08em;
-        color: #777777;
     }
 
     .action-title {
+        color: var(--text);
         font-size: 16px;
-        font-weight: 650;
-        margin-top: 6px;
-        color: #191919;
+        font-weight: 700;
+        margin-top: 7px;
     }
 
     .action-meta {
-        font-size: 12px;
-        color: #777777;
+        color: var(--muted);
+        font-size: 11px;
+        line-height: 1.7;
         margin-top: 8px;
     }
 
-
-    .status-ok {
-        display: inline-block;
-        padding: 4px 8px;
-        border-radius: 6px;
-        background: #edf8f2;
-        color: #18794e;
+    .notice {
+        background: #0d1715;
+        border: 1px solid #1c4a3c;
+        border-radius: 9px;
+        padding: 13px 15px;
+        color: #67d6ae;
         font-size: 11px;
-        font-weight: 600;
+        line-height: 1.5;
     }
 
-    .status-warning {
-        display: inline-block;
-        padding: 4px 8px;
-        border-radius: 6px;
-        background: #fff6e5;
-        color: #9a6700;
+    .warning {
+        background: #19150e;
+        border: 1px solid #4a3818;
+        border-radius: 9px;
+        padding: 13px 15px;
+        color: #e5bb66;
         font-size: 11px;
-        font-weight: 600;
+        line-height: 1.5;
     }
-
-    .status-danger {
-        display: inline-block;
-        padding: 4px 8px;
-        border-radius: 6px;
-        background: #fff0ef;
-        color: #b42318;
-        font-size: 11px;
-        font-weight: 600;
-    }
-
 
     .section-nav {
         display: flex;
         gap: 18px;
-        padding: 10px 0 18px 0;
-        border-bottom: 1px solid #eeeeee;
-        margin-bottom: 20px;
+        padding: 8px 0 15px;
+        margin-bottom: 4px;
+        border-bottom: 1px solid var(--border-soft);
     }
 
     .section-nav a {
-        color: #777777;
+        color: #71869a;
         text-decoration: none;
-        font-size: 12px;
-        font-weight: 500;
+        font-size: 10px;
+        font-weight: 600;
     }
 
     .section-nav a:hover {
-        color: #111111;
+        color: var(--blue);
     }
 
-
     .stButton > button {
+        border: 1px solid var(--border);
         border-radius: 8px;
-        border: 1px solid #dddddd;
-        background: #ffffff;
-        color: #222222;
-        font-weight: 600;
-        font-size: 13px;
-        min-height: 38px;
+        background: #0d141c;
+        color: #cbd9e7;
+        font-size: 11px;
+        font-weight: 650;
+        min-height: 36px;
+        transition: all 150ms ease;
     }
 
     .stButton > button:hover {
-        border-color: #aaaaaa;
-        color: #111111;
-        background: #f8f8f8;
+        border-color: #326087;
+        background: #101c28;
+        color: #ffffff;
     }
 
-
     div[data-testid="stDataFrame"] {
-        border: 1px solid #e8e8e8;
-        border-radius: 10px;
+        border: 1px solid var(--border);
+        border-radius: 9px;
         overflow: hidden;
     }
 
-
     .js-plotly-plot {
-        border: 1px solid #e8e8e8;
-        border-radius: 12px;
-        background: #ffffff;
+        border: 1px solid var(--border);
+        border-radius: 11px;
+        overflow: hidden;
+        background: var(--panel);
     }
 
-
-    .streamlit-expanderHeader {
-        font-size: 13px;
-        font-weight: 600;
+    div[data-baseweb="select"] > div {
+        background: #0d141c;
+        border-color: var(--border);
+        border-radius: 8px;
     }
 
+    div[data-baseweb="select"] * {
+        color: #dce7f1;
+    }
+
+    textarea {
+        background: #0c131b !important;
+        color: #e5eef7 !important;
+        border-color: var(--border) !important;
+    }
+
+    div[data-testid="stRadio"] label {
+        color: #b6c6d5;
+    }
+
+    div[data-testid="stRadio"] label:hover {
+        color: #ffffff;
+    }
+
+    .stCaption {
+        color: var(--muted);
+    }
 
     footer {
         visibility: hidden;
     }
 
+    #MainMenu {
+        visibility: hidden;
+    }
+
     </style>
-    """,
-    unsafe_allow_html=True,
+    """
 )
 
+
+# =========================================================
+# DATA
+# =========================================================
 
 @st.cache_data
 def get_data():
@@ -379,40 +590,33 @@ customer = data["customer"]
 feedback_text = data["feedback_text"]
 
 
+# =========================================================
+# SIDEBAR
+# =========================================================
 
 with st.sidebar:
 
-    st.markdown(
+    render_html(
         """
-        <div class="brand">InsightX</div>
-        <div class="brand-subtitle">
-            Business decision intelligence
+        <div class="brand-wrap">
+            <div class="brand-row">
+                <span class="brand-dot"></span>
+                <span class="brand">InsightX</span>
+            </div>
+
+            <div class="brand-subtitle">
+                Business decision intelligence
+            </div>
         </div>
-        """,
-        unsafe_allow_html=True,
+        """
     )
 
-    st.divider()
-
-    persona = st.selectbox(
-        "View",
-        ["Business Head", "Business Analyst"],
+    render_html(
+        '<div class="sidebar-label">Workspace</div>'
     )
-
-    scenario = st.selectbox(
-        "Scenario",
-        ["normal", "low_confidence", "sparse_history"],
-        format_func=lambda x: {
-            "normal": "Normal",
-            "low_confidence": "Low confidence",
-            "sparse_history": "Sparse history",
-        }[x],
-    )
-
-    st.divider()
 
     page = st.radio(
-        "Navigate",
+        "Workspace",
         [
             "Overview",
             "Investigation",
@@ -423,18 +627,106 @@ with st.sidebar:
         label_visibility="collapsed",
     )
 
-    st.divider()
+    render_html(
+        '<div class="sidebar-label">View</div>'
+    )
+
+    persona = st.selectbox(
+        "View",
+        [
+            "Business Head",
+            "Business Analyst",
+        ],
+        label_visibility="collapsed",
+    )
+
+    render_html(
+        '<div class="sidebar-label">Scenario</div>'
+    )
+
+    scenario = st.selectbox(
+        "Scenario",
+        [
+            "normal",
+            "low_confidence",
+            "sparse_history",
+        ],
+        format_func=lambda x: {
+            "normal": "Normal",
+            "low_confidence": "Low confidence",
+            "sparse_history": "Sparse history",
+        }[x],
+        label_visibility="collapsed",
+    )
+
+    render_html(
+        '<div class="sidebar-label">Analysis window</div>'
+    )
+
+    analysis_days = st.slider(
+        "Days",
+        min_value=7,
+        max_value=21,
+        value=21,
+        step=7,
+        label_visibility="collapsed",
+    )
+
+    render_html(
+        '<div class="sidebar-label">Data</div>'
+    )
+
+    render_html(
+        """
+        <div class="sidebar-card">
+
+            <div class="sidebar-card-title">
+                <span class="data-dot"></span>
+                Demo dataset
+            </div>
+
+            <div class="sidebar-card-copy">
+                Sales · Inventory · Customer · Feedback
+            </div>
+
+        </div>
+        """
+    )
+
+    render_html(
+        f"""
+        <div class="sidebar-card">
+
+            <div class="sidebar-card-title">
+                Analysis ready
+            </div>
+
+            <div class="sidebar-card-copy">
+                {len(sales):,} sales records ·
+                {len(inventory):,} inventory records
+            </div>
+
+        </div>
+        """
+    )
+
+    render_html(
+        '<div style="height:20px;"></div>'
+    )
 
     st.caption(
-        "Prototype environment · Synthetic retail data"
+        "InsightX prototype · synthetic retail data"
     )
 
 
+# =========================================================
+# ANALYTICS
+# =========================================================
 
 kpi_df = calculate_kpis(
     sales,
     customer,
-    days=21,
+    days=analysis_days,
 )
 
 comparison = compare_kpis(kpi_df)
@@ -443,7 +735,7 @@ driver_pack = build_revenue_driver_pack(
     sales,
     inventory,
     customer,
-    days=21,
+    days=analysis_days,
 )
 
 recon = reconcile_sources(
@@ -457,8 +749,6 @@ _, theme_summary = extract_themes(
     feedback_text
 )
 
-
-
 base_conf = confidence_score(
     data_completeness=min(
         source_completeness(sales),
@@ -471,6 +761,7 @@ base_conf = confidence_score(
     unstructured_support=0.80,
 )
 
+
 if scenario == "low_confidence":
     conf = 0.38
 
@@ -478,7 +769,10 @@ elif scenario == "sparse_history":
     conf = 0.42
 
 else:
-    conf = max(0.80, base_conf)
+    conf = max(
+        0.80,
+        base_conf,
+    )
 
 
 conf_label = label(conf)
@@ -490,6 +784,9 @@ severity = classify_change(
 )
 
 
+# =========================================================
+# HELPERS
+# =========================================================
 
 def money(value):
     return f"₹{value / 1e7:.2f} Cr"
@@ -504,6 +801,33 @@ def change_class(value):
         return "positive"
 
     return "neutral"
+
+
+def render_header(title, subtitle):
+
+    render_html(
+        f"""
+        <div class="topbar">
+
+            <div class="page-kicker">
+                InsightX
+            </div>
+
+            <div class="page-title">
+                {html.escape(title)}
+            </div>
+
+            <div class="page-subtitle">
+                {html.escape(subtitle)}
+            </div>
+
+            <div class="period-pill">
+                Last {analysis_days} days · Demo dataset
+            </div>
+
+        </div>
+        """
+    )
 
 
 def render_kpi(name, item):
@@ -522,22 +846,88 @@ def render_kpi(name, item):
 
     css_class = change_class(change)
 
-    arrow = "↓" if change < 0 else "↑"
+    if change < 0:
+        arrow = "↓"
 
-    if change == 0:
+    elif change > 0:
+        arrow = "↑"
+
+    else:
         arrow = "—"
 
-    st.markdown(
+    render_html(
         f"""
         <div class="kpi-card">
-            <div class="kpi-name">{name}</div>
-            <div class="kpi-value">{value}</div>
-            <div class="kpi-change-{css_class}">
-                {arrow} {abs(change):.1f}%
+
+            <div class="kpi-name">
+                {html.escape(str(name))}
             </div>
+
+            <div class="kpi-value">
+                {value}
+            </div>
+
+            <div class="kpi-change-{css_class}">
+                {arrow} {abs(change):.1f}% vs previous period
+            </div>
+
         </div>
-        """,
-        unsafe_allow_html=True,
+        """
+    )
+
+
+def render_action(action):
+
+    priority = html.escape(
+        str(action.get("priority", ""))
+    )
+
+    title = html.escape(
+        str(action.get("action", ""))
+    )
+
+    driver = html.escape(
+        str(action.get("driver", ""))
+    )
+
+    lever = html.escape(
+        str(action.get("lever", ""))
+    )
+
+    owner = html.escape(
+        str(action.get("owner", ""))
+    )
+
+    impact = html.escape(
+        str(action.get("expected_impact", ""))
+    )
+
+    monitoring = html.escape(
+        str(action.get("monitoring", ""))
+    )
+
+    render_html(
+        f"""
+        <div class="action-card">
+
+            <div class="action-priority">
+                {priority}
+            </div>
+
+            <div class="action-title">
+                {title}
+            </div>
+
+            <div class="action-meta">
+                Driver · {driver}<br>
+                Lever · {lever}<br>
+                Owner · {owner}<br>
+                Expected impact · {impact}<br>
+                Monitoring · {monitoring}
+            </div>
+
+        </div>
+        """
     )
 
 
@@ -546,17 +936,17 @@ def plot_layout(fig, height=320):
     fig.update_layout(
         height=height,
         margin=dict(
-            l=20,
-            r=20,
-            t=20,
-            b=20,
+            l=12,
+            r=12,
+            t=15,
+            b=15,
         ),
-        paper_bgcolor="white",
-        plot_bgcolor="white",
+        paper_bgcolor="#0c1118",
+        plot_bgcolor="#0c1118",
         font=dict(
             family="Inter, Arial, sans-serif",
-            size=12,
-            color="#555555",
+            size=11,
+            color="#7f91a5",
         ),
         showlegend=False,
     )
@@ -564,42 +954,42 @@ def plot_layout(fig, height=320):
     fig.update_xaxes(
         showgrid=False,
         zeroline=False,
-        linecolor="#eeeeee",
+        linecolor="#1d2a38",
+        tickfont=dict(
+            color="#667b90"
+        ),
     )
 
     fig.update_yaxes(
         showgrid=True,
-        gridcolor="#f0f0f0",
+        gridcolor="#18232f",
         zeroline=False,
+        tickfont=dict(
+            color="#667b90"
+        ),
     )
 
     return fig
 
 
+# =========================================================
+# OVERVIEW
+# =========================================================
 
 if page == "Overview":
 
-    st.markdown(
-        """
-        <div class="topbar">
-            <div>
-                <div class="page-title">Business overview</div>
-                <div class="page-subtitle">
-                    A concise view of current business performance and material changes.
-                </div>
-            </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
+    render_header(
+        "Business overview",
+        "Current performance and the changes that need attention.",
     )
 
-
-    st.markdown(
-        '<div class="section-label">Performance</div>',
-        unsafe_allow_html=True,
+    render_html(
+        '<div class="section-label">Performance</div>'
     )
 
-    cols = st.columns(len(comparison))
+    cols = st.columns(
+        len(comparison)
+    )
 
     for col, (name, item) in zip(
         cols,
@@ -607,44 +997,52 @@ if page == "Overview":
     ):
 
         with col:
-            render_kpi(name, item)
+            render_kpi(
+                name,
+                item,
+            )
 
-
-    st.markdown(
+    render_html(
         """
         <div class="section-nav">
-            <a href="#performance">Performance</a>
-            <a href="#key-signal">Key signal</a>
+            <a href="#trend">Trend</a>
+            <a href="#signal">Signal</a>
             <a href="#contributors">Contributors</a>
         </div>
-        """,
-        unsafe_allow_html=True,
+        """
     )
 
-
-    st.markdown(
-        '<div id="performance"></div>',
-        unsafe_allow_html=True,
+    render_html(
+        '<div id="trend"></div>'
     )
 
-    st.markdown(
-        '<div class="section-title">Revenue performance</div>',
-        unsafe_allow_html=True,
+    render_html(
+        '<div class="section-label">Trend</div>'
     )
 
-    st.markdown(
-        '<div class="section-description">'
-        'Current revenue compared with the previous equal-length period.'
-        '</div>',
-        unsafe_allow_html=True,
+    render_html(
+        '<div class="section-title">Revenue</div>'
+    )
+
+    render_html(
+        """
+        <div class="section-description">
+            Daily revenue over the available period.
+        </div>
+        """
     )
 
     daily = (
         sales.groupby(
             "date",
-            as_index=False
+            as_index=False,
         )["revenue"]
         .sum()
+        .sort_values("date")
+    )
+
+    daily["date"] = pd.to_datetime(
+        daily["date"]
     )
 
     fig = px.line(
@@ -654,8 +1052,11 @@ if page == "Overview":
     )
 
     fig.update_traces(
-        line_width=2.2,
-        hovertemplate="Revenue: ₹%{y:,.0f}<extra></extra>",
+        line=dict(
+            color="#4da3ff",
+            width=2.2,
+        ),
+        hovertemplate="₹%{y:,.0f}<extra></extra>",
     )
 
     fig = plot_layout(
@@ -667,58 +1068,60 @@ if page == "Overview":
         fig,
         use_container_width=True,
         config={
-            "displayModeBar": False,
+            "displayModeBar": False
         },
     )
 
-
-    st.markdown(
-        '<div id="key-signal"></div>',
-        unsafe_allow_html=True,
+    render_html(
+        '<div id="signal"></div>'
     )
 
-    st.markdown(
-        '<div class="section-label">Key signal</div>',
-        unsafe_allow_html=True,
+    render_html(
+        '<div class="section-label">Signal</div>'
     )
 
     left, right = st.columns(
-        [2.2, 1],
+        [2.1, 1],
         gap="large",
     )
 
     with left:
 
-        st.markdown(
+        direction = (
+            "down"
+            if revenue["change_pct"] < 0
+            else "up"
+        )
+
+        render_html(
             f"""
-            <div class="insight-card">
+            <div class="signal-card">
 
-                <div class="insight-status">
-                    Material movement
+                <div class="signal-status">
+                    {html.escape(str(severity))}
                 </div>
 
-                <div class="insight-title">
-                    Revenue declined {abs(revenue["change_pct"]):.1f}%
+                <div class="signal-title">
+                    Revenue is {direction}
+                    {abs(revenue["change_pct"]):.1f}%
                 </div>
 
-                <div class="insight-copy">
-                    Revenue moved from
-                    <strong>{money(revenue["previous"])}</strong>
-                    to
-                    <strong>{money(revenue["current"])}</strong>
-                    across equal 21-day periods.
+                <div class="signal-copy">
+                    {money(revenue["previous"])}
+                    →
+                    {money(revenue["current"])}
+                    across equal {analysis_days}-day periods.
                 </div>
 
             </div>
-            """,
-            unsafe_allow_html=True,
+            """
         )
 
     with right:
 
-        st.markdown(
+        render_html(
             f"""
-            <div class="confidence-box">
+            <div class="confidence-card">
 
                 <div class="confidence-label">
                     Confidence
@@ -728,241 +1131,245 @@ if page == "Overview":
                     {conf:.0%}
                 </div>
 
-                <div style="font-size:12px;color:#777;margin-top:3px;">
-                    {conf_label}
+                <div class="confidence-status">
+                    {html.escape(str(conf_label).upper())}
                 </div>
 
             </div>
-            """,
-            unsafe_allow_html=True,
+            """
         )
 
-
-    st.markdown(
-        '<div id="contributors"></div>',
-        unsafe_allow_html=True,
+    render_html(
+        '<div id="contributors"></div>'
     )
 
-    st.markdown(
-        '<div class="section-label">Contributors</div>',
-        unsafe_allow_html=True,
+    render_html(
+        '<div class="section-label">Contributors</div>'
     )
 
     region_df = driver_pack["regions"].copy()
 
     if not region_df.empty:
 
-        fig2 = px.bar(
-            region_df.head(4),
-            x="contribution_pct",
-            y="region",
-            orientation="h",
+        region_cards = region_df.head(4)
+
+        columns = st.columns(
+            min(4, len(region_cards))
         )
 
-        fig2.update_traces(
-            hovertemplate="%{y}: %{x:.1f}%<extra></extra>",
-        )
+        for col, (_, row) in zip(
+            columns,
+            region_cards.iterrows(),
+        ):
 
-        fig2.update_layout(
-            xaxis_title="Share of negative movement",
-            yaxis_title="",
-        )
+            with col:
 
-        fig2 = plot_layout(
-            fig2,
-            height=260,
-        )
+                render_html(
+                    f"""
+                    <div class="driver-card">
 
-        st.plotly_chart(
-            fig2,
-            use_container_width=True,
-            config={
-                "displayModeBar": False,
-            },
-        )
+                        <div class="driver-label">
+                            Region
+                        </div>
+
+                        <div class="driver-name">
+                            {html.escape(str(row["region"]))}
+                        </div>
+
+                        <div class="driver-value">
+                            {money(row["delta"])}
+                        </div>
+
+                        <div class="driver-share">
+                            {row["contribution_pct"]:.1f}%
+                            of negative movement
+                        </div>
+
+                    </div>
+                    """
+                )
 
 
+# =========================================================
+# INVESTIGATION
+# =========================================================
 
 elif page == "Investigation":
 
-    st.markdown(
-        """
-        <div class="topbar">
-            <div>
-                <div class="page-title">Revenue investigation</div>
-                <div class="page-subtitle">
-                    Understand what changed, what may be contributing, and what to do next.
-                </div>
-            </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
+    render_header(
+        "Revenue investigation",
+        "Trace the movement from signal to contributing evidence and action.",
     )
 
-    st.markdown(
+    render_html(
         """
         <div class="section-nav">
-            <a href="#signal">Signal</a>
-            <a href="#drivers">Drivers</a>
-            <a href="#connections">Connections</a>
-            <a href="#recommendation">Recommendation</a>
+            <a href="#signal">01 Signal</a>
+            <a href="#drivers">02 Drivers</a>
+            <a href="#connections">03 Connections</a>
+            <a href="#recommendation">04 Action</a>
         </div>
-        """,
-        unsafe_allow_html=True,
+        """
     )
 
+    # -----------------------------------------------------
+    # SIGNAL
+    # -----------------------------------------------------
 
-    st.markdown(
-        '<div id="signal"></div>',
-        unsafe_allow_html=True,
+    render_html(
+        '<div id="signal"></div>'
     )
 
-    st.markdown(
-        '<div class="section-label">01 · Signal</div>',
-        unsafe_allow_html=True,
+    render_html(
+        '<div class="section-label">01 · Signal</div>'
     )
 
-    st.markdown(
+    direction = (
+        "down"
+        if revenue["change_pct"] < 0
+        else "up"
+    )
+
+    render_html(
         f"""
-        <div class="insight-card">
+        <div class="signal-card">
 
-            <div class="insight-status">
-                Revenue movement · {severity}
+            <div class="signal-status">
+                Revenue movement ·
+                {html.escape(str(severity))}
             </div>
 
-            <div class="insight-title">
-                Revenue is down {abs(revenue["change_pct"]):.1f}%
+            <div class="signal-title">
+                Revenue is {direction}
+                {abs(revenue["change_pct"]):.1f}%
             </div>
 
-            <div class="insight-copy">
-                The current 21-day period generated
-                <strong>{money(revenue["current"])}</strong>,
-                compared with
+            <div class="signal-copy">
+                Current period:
+                <strong>{money(revenue["current"])}</strong>
+                &nbsp;·&nbsp;
+                Previous period:
                 <strong>{money(revenue["previous"])}</strong>
-                in the previous period.
             </div>
 
         </div>
-        """,
-        unsafe_allow_html=True,
+        """
     )
 
+    # -----------------------------------------------------
+    # DRIVERS
+    # -----------------------------------------------------
 
-    st.markdown(
-        '<div id="drivers"></div>',
-        unsafe_allow_html=True,
+    render_html(
+        '<div id="drivers"></div>'
     )
 
-    st.markdown(
-        '<div class="section-label">02 · Drivers</div>',
-        unsafe_allow_html=True,
+    render_html(
+        '<div class="section-label">02 · Drivers</div>'
     )
 
     top_region = driver_pack["regions"].head(3)
     top_product = driver_pack["products"].head(3)
 
-    driver_col1, driver_col2 = st.columns(
+    d1, d2 = st.columns(
         2,
         gap="large",
     )
 
-    with driver_col1:
+    with d1:
 
-        st.markdown(
-            '<div class="section-title">Regional contribution</div>',
-            unsafe_allow_html=True,
+        render_html(
+            '<div class="section-title">Regional contribution</div>'
         )
 
         if not top_region.empty:
 
-            display = top_region[
-                [
-                    "region",
-                    "previous",
-                    "current",
-                    "delta",
-                    "contribution_pct",
-                ]
-            ].copy()
+            for _, row in top_region.iterrows():
 
-            display.columns = [
-                "Region",
-                "Previous",
-                "Current",
-                "Change",
-                "Share",
-            ]
+                render_html(
+                    f"""
+                    <div class="driver-card"
+                         style="margin-bottom:8px;">
 
-            display["Previous"] = display["Previous"].map(money)
-            display["Current"] = display["Current"].map(money)
+                        <div class="driver-label">
+                            Region
+                        </div>
 
-            display["Change"] = display["Change"].map(
-                lambda x: money(x)
+                        <div class="driver-name">
+                            {html.escape(str(row["region"]))}
+                        </div>
+
+                        <div class="driver-value">
+                            {money(row["delta"])}
+                        </div>
+
+                        <div class="driver-share">
+                            {row["contribution_pct"]:.1f}%
+                            of negative movement
+                        </div>
+
+                    </div>
+                    """
+                )
+
+        else:
+
+            st.caption(
+                "No regional driver data available."
             )
 
-            display["Share"] = display["Share"].map(
-                lambda x: f"{x:.1f}%"
-            )
+    with d2:
 
-            st.dataframe(
-                display,
-                use_container_width=True,
-                hide_index=True,
-            )
-
-    with driver_col2:
-
-        st.markdown(
-            '<div class="section-title">Product contribution</div>',
-            unsafe_allow_html=True,
+        render_html(
+            '<div class="section-title">Product contribution</div>'
         )
 
         if not top_product.empty:
 
-            display2 = top_product[
-                [
-                    "product",
-                    "previous",
-                    "current",
-                    "delta",
-                    "contribution_pct",
-                ]
-            ].copy()
+            for _, row in top_product.iterrows():
 
-            display2.columns = [
-                "Product",
-                "Previous",
-                "Current",
-                "Change",
-                "Share",
-            ]
+                render_html(
+                    f"""
+                    <div class="driver-card"
+                         style="margin-bottom:8px;">
 
-            display2["Previous"] = display2["Previous"].map(money)
-            display2["Current"] = display2["Current"].map(money)
+                        <div class="driver-label">
+                            Product
+                        </div>
 
-            display2["Change"] = display2["Change"].map(
-                lambda x: money(x)
+                        <div class="driver-name">
+                            {html.escape(str(row["product"]))}
+                        </div>
+
+                        <div class="driver-value">
+                            {money(row["delta"])}
+                        </div>
+
+                        <div class="driver-share">
+                            {row["contribution_pct"]:.1f}%
+                            of negative movement
+                        </div>
+
+                    </div>
+                    """
+                )
+
+        else:
+
+            st.caption(
+                "No product driver data available."
             )
 
-            display2["Share"] = display2["Share"].map(
-                lambda x: f"{x:.1f}%"
-            )
+    # -----------------------------------------------------
+    # CONNECTIONS
+    # -----------------------------------------------------
 
-            st.dataframe(
-                display2,
-                use_container_width=True,
-                hide_index=True,
-            )
-
-
-    st.markdown(
-        '<div id="connections"></div>',
-        unsafe_allow_html=True,
+    render_html(
+        '<div id="connections"></div>'
     )
 
-    st.markdown(
-        '<div class="section-label">03 · Connections</div>',
-        unsafe_allow_html=True,
+    render_html(
+        '<div class="section-label">03 · Connections</div>'
     )
 
     c1, c2 = st.columns(
@@ -974,7 +1381,12 @@ elif page == "Investigation":
 
         inv = driver_pack["inventory"]
 
-        st.markdown(
+        inventory_change = inv.get(
+            "change_pct",
+            0,
+        )
+
+        render_html(
             f"""
             <div class="kpi-card">
 
@@ -983,23 +1395,45 @@ elif page == "Investigation":
                 </div>
 
                 <div class="kpi-value">
-                    {inv["current"]:,.0f}
+                    {inv.get("current", 0):,.0f}
                 </div>
 
                 <div class="kpi-change-negative">
-                    ↑ {abs(inv["change_pct"]):.1f}%
+                    ↑ {abs(inventory_change):.1f}%
                 </div>
 
             </div>
-            """,
-            unsafe_allow_html=True,
+            """
         )
 
     with c2:
 
         comp = driver_pack["complaints"]
 
-        st.markdown(
+        complaints_current = comp.get(
+            "current",
+            0,
+        )
+
+        complaints_change = comp.get(
+            "change_pct",
+            0,
+        )
+
+        complaint_css = change_class(
+            complaints_change
+        )
+
+        if complaints_change < 0:
+            complaint_arrow = "↓"
+
+        elif complaints_change > 0:
+            complaint_arrow = "↑"
+
+        else:
+            complaint_arrow = "—"
+
+        render_html(
             f"""
             <div class="kpi-card">
 
@@ -1008,25 +1442,32 @@ elif page == "Investigation":
                 </div>
 
                 <div class="kpi-value">
-                    {comp["current"]:,.0f}
+                    {complaints_current:,.0f}
                 </div>
 
-                <div class="kpi-change-negative">
-                    ↑ {abs(comp["change_pct"]):.1f}%
+                <div class="kpi-change-{complaint_css}">
+                    {complaint_arrow}
+                    {abs(complaints_change):.1f}%
+                    vs previous period
                 </div>
 
             </div>
-            """,
-            unsafe_allow_html=True,
+            """
         )
 
-    st.markdown("")
+    # -----------------------------------------------------
+    # CUSTOMER SIGNALS
+    # -----------------------------------------------------
 
     if not theme_summary.empty:
 
-        st.markdown(
-            '<div class="section-title">Customer signals</div>',
-            unsafe_allow_html=True,
+        render_html(
+            """
+            <div class="section-title"
+                 style="margin-top:22px;">
+                Customer signals
+            </div>
+            """
         )
 
         st.dataframe(
@@ -1035,6 +1476,9 @@ elif page == "Investigation":
             hide_index=True,
         )
 
+    # -----------------------------------------------------
+    # STATISTICAL SIGNALS
+    # -----------------------------------------------------
 
     corr = driver_pack["correlations"]
 
@@ -1055,21 +1499,35 @@ elif page == "Investigation":
                 "Correlation indicates association, not causation."
             )
 
+    # -----------------------------------------------------
+    # SCENARIO WARNINGS
+    # -----------------------------------------------------
 
     if scenario == "low_confidence":
 
-        st.warning(
-            "Evidence is incomplete. InsightX will not make a "
-            "definitive inventory attribution."
+        render_html(
+            """
+            <div class="warning">
+                Evidence is incomplete. InsightX will not make a
+                definitive inventory attribution.
+            </div>
+            """
         )
 
     elif scenario == "sparse_history":
 
-        st.warning(
-            "Historical evidence is limited. InsightX will not "
-            "make a strong trend claim for the selected scenario."
+        render_html(
+            """
+            <div class="warning">
+                Historical evidence is limited. InsightX will not
+                make a strong trend claim for the selected scenario.
+            </div>
+            """
         )
 
+    # -----------------------------------------------------
+    # AI NARRATIVE
+    # -----------------------------------------------------
 
     payload = {
         "kpi": "Revenue",
@@ -1091,34 +1549,40 @@ elif page == "Investigation":
         persona,
     )
 
-    st.markdown(
-        '<div class="section-label">Interpretation</div>',
-        unsafe_allow_html=True,
+    safe_narrative = (
+        html.escape(str(narrative))
+        .replace("\n", "<br>")
     )
 
-    st.markdown(
-        f"""
-        <div class="insight-card">
+    render_html(
+        '<div class="section-label">Interpretation</div>'
+    )
 
-            <div class="insight-copy"
-                 style="margin-top:0;font-size:15px;color:#333;">
-                {narrative}
+    render_html(
+        f"""
+        <div class="card">
+
+            <div class="signal-copy"
+                 style="margin-top:0;color:#b9c8d7;">
+
+                {safe_narrative}
+
             </div>
 
         </div>
-        """,
-        unsafe_allow_html=True,
+        """
     )
 
+    # -----------------------------------------------------
+    # RECOMMENDED ACTION
+    # -----------------------------------------------------
 
-    st.markdown(
-        '<div id="recommendation"></div>',
-        unsafe_allow_html=True,
+    render_html(
+        '<div id="recommendation"></div>'
     )
 
-    st.markdown(
-        '<div class="section-label">04 · Recommendation</div>',
-        unsafe_allow_html=True,
+    render_html(
+        '<div class="section-label">04 · Recommended action</div>'
     )
 
     actions = recommend_actions(
@@ -1127,41 +1591,19 @@ elif page == "Investigation":
     )
 
     for action in actions[:3]:
+        render_action(action)
 
-        st.markdown(
-            f"""
-            <div class="action-card">
+    # -----------------------------------------------------
+    # FEEDBACK
+    # -----------------------------------------------------
 
-                <div class="action-priority">
-                    {action["priority"]}
-                </div>
-
-                <div class="action-title">
-                    {action["action"]}
-                </div>
-
-                <div class="action-meta">
-                    Driver: {action["driver"]}
-                    &nbsp; · &nbsp;
-                    Owner: {action["owner"]}
-                    &nbsp; · &nbsp;
-                    Monitoring: {action["monitoring"]}
-                </div>
-
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-
-
-    st.markdown(
-        '<div class="section-label">Feedback</div>',
-        unsafe_allow_html=True,
+    render_html(
+        '<div class="section-label">Feedback</div>'
     )
 
-    col_a, col_b = st.columns(2)
+    f1, f2 = st.columns(2)
 
-    with col_a:
+    with f1:
 
         if st.button(
             "Insight is useful",
@@ -1178,7 +1620,7 @@ elif page == "Investigation":
                 "Feedback recorded."
             )
 
-    with col_b:
+    with f2:
 
         if st.button(
             "Needs correction",
@@ -1219,26 +1661,19 @@ elif page == "Investigation":
             ] = False
 
 
+# =========================================================
+# EVIDENCE
+# =========================================================
 
 elif page == "Evidence":
 
-    st.markdown(
-        """
-        <div class="topbar">
-            <div>
-                <div class="page-title">Evidence</div>
-                <div class="page-subtitle">
-                    See where each insight comes from and how the system validates it.
-                </div>
-            </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
+    render_header(
+        "Evidence",
+        "Trace the insight back to the sources used by the analysis.",
     )
 
-    st.markdown(
-        '<div class="section-label">Source coverage</div>',
-        unsafe_allow_html=True,
+    render_html(
+        '<div class="section-label">Source coverage</div>'
     )
 
     st.dataframe(
@@ -1253,7 +1688,7 @@ elif page == "Evidence":
 
     with c1:
 
-        st.markdown(
+        render_html(
             f"""
             <div class="kpi-card">
 
@@ -1266,13 +1701,12 @@ elif page == "Evidence":
                 </div>
 
             </div>
-            """,
-            unsafe_allow_html=True,
+            """
         )
 
     with c2:
 
-        st.markdown(
+        render_html(
             f"""
             <div class="kpi-card">
 
@@ -1285,13 +1719,11 @@ elif page == "Evidence":
                 </div>
 
             </div>
-            """,
-            unsafe_allow_html=True,
+            """
         )
 
-    st.markdown(
-        '<div class="section-label">Lineage</div>',
-        unsafe_allow_html=True,
+    render_html(
+        '<div class="section-label">Lineage</div>'
     )
 
     lineage = pd.DataFrame(
@@ -1304,51 +1736,51 @@ elif page == "Evidence":
         hide_index=True,
     )
 
-    st.markdown(
-        '<div class="section-label">System boundary</div>',
-        unsafe_allow_html=True,
+    render_html(
+        '<div class="section-label">System boundary</div>'
     )
 
-    st.markdown(
+    render_html(
         """
-        <div class="insight-card">
+        <div class="card">
 
             <div class="section-title">
                 Analytics first. Language second.
             </div>
 
-            <div class="insight-copy">
+            <div class="signal-copy">
+
                 KPI calculations, comparisons, materiality,
                 driver analysis, reconciliation and confidence
                 are handled by deterministic analytics.
+
                 <br><br>
-                The language layer only turns verified results
-                into a concise business explanation.
+
+                The language layer turns verified results into
+                a concise business explanation.
+
                 <br><br>
-                <strong>The language model is not the source of truth.</strong>
+
+                <strong>
+                    The language model is not the source of truth.
+                </strong>
+
             </div>
 
         </div>
-        """,
-        unsafe_allow_html=True,
+        """
     )
 
 
+# =========================================================
+# ACTIONS
+# =========================================================
 
 elif page == "Actions":
 
-    st.markdown(
-        """
-        <div class="topbar">
-            <div>
-                <div class="page-title">Recommended actions</div>
-                <div class="page-subtitle">
-                    Prioritized next steps based on the available evidence.
-                </div>
-            </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
+    render_header(
+        "Recommended actions",
+        "Prioritized next steps based on the available evidence.",
     )
 
     actions = recommend_actions(
@@ -1358,140 +1790,122 @@ elif page == "Actions":
 
     if conf < 0.55:
 
-        st.warning(
-            "Confidence is low. Recommended action is validation "
-            "rather than an aggressive business intervention."
+        render_html(
+            """
+            <div class="warning">
+
+                Confidence is low. The recommended action is
+                validation rather than an aggressive intervention.
+
+            </div>
+            """
         )
 
     for action in actions:
-
-        st.markdown(
-            f"""
-            <div class="action-card">
-
-                <div class="action-priority">
-                    {action["priority"]}
-                </div>
-
-                <div class="action-title">
-                    {action["action"]}
-                </div>
-
-                <div class="action-meta">
-                    Driver · {action["driver"]}
-                    <br>
-                    Lever · {action["lever"]}
-                    <br>
-                    Owner · {action["owner"]}
-                    <br>
-                    Expected impact · {action["expected_impact"]}
-                    <br>
-                    Monitoring · {action["monitoring"]}
-                </div>
-
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
+        render_action(action)
 
 
+# =========================================================
+# GOVERNANCE
+# =========================================================
 
 elif page == "Governance":
 
-    st.markdown(
-        """
-        <div class="topbar">
-            <div>
-                <div class="page-title">Governance</div>
-                <div class="page-subtitle">
-                    Transparency, feedback and decision-support guardrails.
-                </div>
-            </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
+    render_header(
+        "Governance",
+        "Confidence, feedback and the boundary between analytics and generation.",
     )
 
-
-    st.markdown(
-        '<div class="section-label">Current view</div>',
-        unsafe_allow_html=True,
+    render_html(
+        '<div class="section-label">Current view</div>'
     )
 
     if persona == "Business Head":
 
-        st.markdown(
+        render_html(
             """
-            <div class="insight-card">
+            <div class="card">
 
                 <div class="section-title">
                     Executive view
                 </div>
 
-                <div class="insight-copy">
-                    Focuses on business impact, key drivers,
+                <div class="signal-copy">
+
+                    Focuses on business impact, key contributors,
                     recommended decisions and ownership.
+
                 </div>
 
             </div>
-            """,
-            unsafe_allow_html=True,
+            """
         )
 
     else:
 
-        st.markdown(
+        render_html(
             """
-            <div class="insight-card">
+            <div class="card">
 
                 <div class="section-title">
                     Analyst view
                 </div>
 
-                <div class="insight-copy">
-                    Focuses on evidence, analytical methods,
+                <div class="signal-copy">
+
+                    Focuses on evidence, analytical method,
                     uncertainty and source lineage.
+
                 </div>
 
             </div>
-            """,
-            unsafe_allow_html=True,
+            """
         )
 
-
-    st.markdown(
-        '<div class="section-label">Guardrails</div>',
-        unsafe_allow_html=True,
+    render_html(
+        '<div class="section-label">Confidence</div>'
     )
 
-    st.markdown(
-        """
-        <div class="insight-card">
+    render_html(
+        f"""
+        <div class="confidence-card">
 
-            <div class="insight-copy"
-                 style="margin-top:0;">
+            <div class="confidence-label">
+                Current confidence
+            </div>
 
-                InsightX is a decision-support system.
-                It should avoid strong conclusions when:
+            <div class="confidence-value">
+                {conf:.0%}
+            </div>
 
-                <br><br>
-
-                • evidence is incomplete<br>
-                • sources disagree<br>
-                • historical data is insufficient<br>
-                • relationships only show correlation
-
+            <div class="confidence-status">
+                {html.escape(str(conf_label).upper())}
             </div>
 
         </div>
-        """,
-        unsafe_allow_html=True,
+        """
     )
 
+    render_html(
+        '<div class="section-label">Guardrails</div>'
+    )
 
-    st.markdown(
-        '<div class="section-label">Feedback history</div>',
-        unsafe_allow_html=True,
+    render_html(
+        """
+        <div class="notice">
+
+            InsightX supports decisions; it does not make decisions.
+
+            When evidence is incomplete, contradictory or sparse,
+            confidence should decrease and strong attribution should
+            be avoided.
+
+        </div>
+        """
+    )
+
+    render_html(
+        '<div class="section-label">Feedback history</div>'
     )
 
     feedback = load_feedback()
@@ -1510,12 +1924,10 @@ elif page == "Governance":
             "No feedback has been recorded yet."
         )
 
-
-    st.markdown(
-        '<div class="section-label">Runtime</div>',
-        unsafe_allow_html=True,
+    render_html(
+        '<div class="section-label">Runtime</div>'
     )
 
     st.caption(
-        "Runtime telemetry is retained for prototype monitoring."
+        "InsightX prototype runtime · deterministic analytics + optional narrative generation."
     )
