@@ -1,70 +1,67 @@
 import pandas as pd
 import numpy as np
 
-def _safe_pct_change(current, previous):
+def safe_pct_change(current, previous):
     if previous == 0:
         return 0.0
     return (current - previous) / abs(previous) * 100.0
 
-def calculate_kpis(sales, inventory, customer):
-    revenue = sales["revenue"].sum()
-    profit = (sales["revenue"] - sales["product_cost"] - sales["marketing_spend"]).sum()
-    orders = sales["orders"].sum()
-    sessions = sales["sessions"].sum()
-    conversion = orders / sessions * 100 if sessions else 0
-    return_units = customer["returned_units"].sum()
-    sold_units = sales["units_sold"].sum()
-    return_rate = return_units / sold_units * 100 if sold_units else 0
+def add_period(df, days=21):
+    """Use equal-length comparison windows to avoid partial-month bias."""
+    d = df.copy()
+    d["date"] = pd.to_datetime(d["date"])
+    latest = d["date"].max()
+    current_start = latest - pd.Timedelta(days=days - 1)
+    previous_end = current_start - pd.Timedelta(days=1)
+    previous_start = previous_end - pd.Timedelta(days=days - 1)
 
-    return {
-        "Revenue": float(revenue),
-        "Profit": float(profit),
-        "Orders": float(orders),
-        "Conversion Rate": float(conversion),
-        "Return Rate": float(return_rate),
-    }
+    d["period"] = np.select(
+        [
+            (d["date"] >= previous_start) & (d["date"] <= previous_end),
+            (d["date"] >= current_start) & (d["date"] <= latest)
+        ],
+        ["previous", "current"],
+        default="outside"
+    )
+    return d, previous_start, previous_end, current_start, latest
 
-def monthly_kpis(sales, customer):
-    s = sales.copy()
-    s["month"] = s["date"].dt.to_period("M").astype(str)
-    c = customer.copy()
-    c["month"] = c["date"].dt.to_period("M").astype(str)
+def calculate_kpis(sales, customer, days=21):
+    s, *_ = add_period(sales, days)
+    c, *_ = add_period(customer, days)
 
-    out = s.groupby("month").agg(
-        revenue=("revenue", "sum"),
-        profit=("revenue", "sum"),
-        orders=("orders", "sum"),
-        sessions=("sessions", "sum"),
-        units_sold=("units_sold", "sum"),
-        product_cost=("product_cost", "sum"),
-        marketing_spend=("marketing_spend", "sum")
-    ).reset_index()
+    rows = []
+    for period in ["previous", "current"]:
+        sp = s[s["period"] == period]
+        cp = c[c["period"] == period]
 
-    out["profit"] = out["revenue"] - out["product_cost"] - out["marketing_spend"]
+        revenue = sp["revenue"].sum()
+        profit = (sp["revenue"] - sp["product_cost"] - sp["marketing_spend"]).sum()
+        orders = sp["orders"].sum()
+        sessions = sp["sessions"].sum()
+        units = sp["units_sold"].sum()
+        returned = cp["returned_units"].sum()
 
-    c2 = c.groupby("month").agg(returned_units=("returned_units", "sum")).reset_index()
-    out = out.merge(c2, on="month", how="left")
-    out["conversion_rate"] = np.where(out["sessions"] > 0, out["orders"] / out["sessions"] * 100, 0)
-    out["return_rate"] = np.where(out["units_sold"] > 0, out["returned_units"] / out["units_sold"] * 100, 0)
-    return out
+        rows.append({
+            "period": period,
+            "Revenue": revenue,
+            "Profit": profit,
+            "Orders": orders,
+            "Conversion Rate": orders / sessions * 100 if sessions else 0,
+            "Return Rate": returned / units * 100 if units else 0
+        })
+    return pd.DataFrame(rows)
 
-def compare_periods(monthly_df):
-    if len(monthly_df) < 2:
-        raise ValueError("Need at least two months of data.")
-    prev = monthly_df.iloc[-2]
-    curr = monthly_df.iloc[-1]
-    metrics = {
-        "Revenue": (curr["revenue"], prev["revenue"]),
-        "Profit": (curr["profit"], prev["profit"]),
-        "Orders": (curr["orders"], prev["orders"]),
-        "Conversion Rate": (curr["conversion_rate"], prev["conversion_rate"]),
-        "Return Rate": (curr["return_rate"], prev["return_rate"]),
-    }
+def compare_kpis(kpi_df):
+    prev = kpi_df[kpi_df["period"] == "previous"].iloc[0]
+    curr = kpi_df[kpi_df["period"] == "current"].iloc[0]
     result = {}
-    for k, (current, previous) in metrics.items():
-        result[k] = {
-            "current": float(current),
-            "previous": float(previous),
-            "change_pct": _safe_pct_change(current, previous)
+    for kpi in ["Revenue", "Profit", "Orders", "Conversion Rate", "Return Rate"]:
+        result[kpi] = {
+            "current": float(curr[kpi]),
+            "previous": float(prev[kpi]),
+            "change_pct": safe_pct_change(curr[kpi], prev[kpi])
         }
     return result
+
+def daily_revenue(sales):
+    return sales.groupby("date", as_index=False)["revenue"].sum()

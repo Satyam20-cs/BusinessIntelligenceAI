@@ -6,95 +6,113 @@ ROOT = Path(__file__).resolve().parent
 DATA = ROOT / "data"
 DATA.mkdir(exist_ok=True)
 
-rng = np.random.default_rng(42)
+rng = np.random.default_rng(7)
 
-dates = pd.date_range("2026-06-01", "2026-08-21", freq="D")
+# 63 days gives three equal 21-day windows.
+dates = pd.date_range("2026-06-20", "2026-08-21", freq="D")
 regions = ["North", "South", "East", "West"]
 products = ["Product A", "Product B", "Product C", "Product D"]
 
-sales_rows = []
-inventory_rows = []
-customer_rows = []
+sales = []
+inventory = []
+customer = []
+feedback = []
+
+feedback_templates = [
+    "Delivery was fast and the product was good.",
+    "Product was out of stock when I tried to buy it.",
+    "The price felt expensive compared with alternatives.",
+    "Checkout was easy and payment worked well.",
+    "Delivery was late and the packaging was damaged.",
+    "The product quality was poor and I want a return.",
+    "Very happy with the purchase and fast delivery."
+]
 
 for d in dates:
-    day_index = (d - dates[0]).days
-    current_month = d.month
-    is_aug = current_month == 8
-
+    is_current = d >= pd.Timestamp("2026-08-01")
     for region in regions:
         for product in products:
-            base_orders = 420 + 30 * regions.index(region) + 25 * products.index(product)
-            noise = rng.normal(0, 35)
+            base = 420 + 35 * regions.index(region) + 25 * products.index(product)
+            orders = max(30, int(base + rng.normal(0, 28)))
 
-            # Deliberately create the competition demo story in August.
-            west_factor = 0.86 if is_aug and region == "West" else 1.0
-            product_a_factor = 0.84 if is_aug and product == "Product A" else 1.0
-            stockout_factor = 0.92 if is_aug and region == "West" and product == "Product A" else 1.0
+            # Controlled business event in the latest 21-day window.
+            if is_current and region == "West":
+                orders = int(orders * 0.84)
+            if is_current and product == "Product A":
+                orders = int(orders * 0.86)
+            if is_current and region == "West" and product == "Product A":
+                orders = int(orders * 0.92)
 
-            orders = max(20, int((base_orders + noise) * west_factor * product_a_factor * stockout_factor))
-            sessions = max(orders + 100, int(orders / 0.035 + rng.normal(0, 100)))
+            sessions = max(orders + 200, int(orders / 0.035 + rng.normal(0, 90)))
             units = max(orders, int(orders * rng.uniform(1.15, 1.45)))
-            price = 2100 + 180 * products.index(product)
-            discount = max(0, price * units * rng.uniform(0.04, 0.10))
+            price = 2100 + products.index(product) * 180
+            discount = price * units * rng.uniform(0.04, 0.09)
             revenue = max(0, units * price - discount)
             cost = revenue * rng.uniform(0.52, 0.61)
             marketing = revenue * rng.uniform(0.035, 0.07)
 
-            sales_rows.append({
-                "date": d.date().isoformat(),
-                "region": region,
-                "product": product,
-                "orders": orders,
-                "sessions": sessions,
-                "units_sold": units,
-                "unit_price": round(price, 2),
-                "discount": round(discount, 2),
-                "revenue": round(revenue, 2),
-                "product_cost": round(cost, 2),
-                "marketing_spend": round(marketing, 2)
-            })
+            sales.append([
+                d.date().isoformat(), region, product, orders, sessions, units,
+                price, discount, revenue, cost, marketing
+            ])
 
-            base_stock = 1500
-            stock_available = base_stock + rng.normal(0, 120)
+            stock = max(0, 1500 + rng.normal(0, 120))
             stockouts = max(0, int(rng.normal(3, 2)))
 
-            if is_aug and region == "West":
-                stock_available *= 0.82
-                stockouts += int(rng.integers(8, 16))
-            if is_aug and product == "Product A":
-                stock_available *= 0.88
-                stockouts += int(rng.integers(3, 8))
+            if is_current and region == "West":
+                stock *= 0.80
+                stockouts += int(rng.integers(8, 15))
+            if is_current and product == "Product A":
+                stock *= 0.88
+                stockouts += int(rng.integers(2, 7))
 
-            inventory_rows.append({
-                "date": d.date().isoformat(),
-                "region": region,
-                "product": product,
-                "stock_available": round(max(0, stock_available), 2),
-                "stockouts": stockouts
-            })
+            inventory.append([
+                d.date().isoformat(), region, product, stock, stockouts
+            ])
 
-            complaints = int(max(0, rng.normal(12, 4)))
-            returned_units = int(max(0, units * rng.uniform(0.025, 0.055)))
+            complaints = max(0, int(rng.normal(12, 4)))
+            returned = max(0, int(units * rng.uniform(0.025, 0.05)))
 
-            if is_aug and product == "Product A":
-                complaints += int(rng.integers(5, 12))
-                returned_units += int(units * 0.025)
+            if is_current and product == "Product A":
+                complaints += int(rng.integers(5, 11))
+                returned += int(units * 0.02)
 
-            sentiment = round(np.clip(rng.normal(0.72, 0.08) - (0.10 if is_aug and product == "Product A" else 0), 0, 1), 3)
+            customer.append([
+                d.date().isoformat(), region, product, complaints, returned
+            ])
 
-            customer_rows.append({
-                "date": d.date().isoformat(),
-                "region": region,
-                "product": product,
-                "complaints": complaints,
-                "returned_units": returned_units,
-                "sentiment_score": sentiment
-            })
+            # A small unstructured source with business text.
+            n_feedback = int(rng.integers(1, 4))
+            for _ in range(n_feedback):
+                if is_current and region == "West" and product == "Product A":
+                    text = rng.choice([
+                        "Product was out of stock when I tried to buy it.",
+                        "Delivery was late and the packaging was damaged.",
+                        "The product quality was poor and I want a return."
+                    ])
+                else:
+                    text = rng.choice(feedback_templates)
+                feedback.append([
+                    d.date().isoformat(), region, product, text
+                ])
 
-pd.DataFrame(sales_rows).to_csv(DATA / "sales.csv", index=False)
-pd.DataFrame(inventory_rows).to_csv(DATA / "inventory.csv", index=False)
-pd.DataFrame(customer_rows).to_csv(DATA / "customer_metrics.csv", index=False)
+pd.DataFrame(sales, columns=[
+    "date","region","product","orders","sessions","units_sold",
+    "unit_price","discount","revenue","product_cost","marketing_spend"
+]).to_csv(DATA / "sales.csv", index=False)
 
-print("Created:")
-for name in ["sales.csv", "inventory.csv", "customer_metrics.csv"]:
-    print(DATA / name)
+pd.DataFrame(inventory, columns=[
+    "date","region","product","stock_available","stockouts"
+]).to_csv(DATA / "inventory.csv", index=False)
+
+pd.DataFrame(customer, columns=[
+    "date","region","product","complaints","returned_units"
+]).to_csv(DATA / "customer_metrics.csv", index=False)
+
+pd.DataFrame(feedback, columns=[
+    "date","region","product","feedback_text"
+]).to_csv(DATA / "customer_feedback.csv", index=False)
+
+(DATA / "feedback_log.json").write_text("[]", encoding="utf-8")
+
+print("Generated 4 data sources in", DATA)

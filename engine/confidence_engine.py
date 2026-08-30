@@ -1,23 +1,32 @@
-def calculate_confidence(data_completeness=0.95, evidence_strength=0.88,
-                         history_strength=0.90, consistency=0.92):
+def confidence_score(
+    data_completeness,
+    driver_strength,
+    history_strength,
+    source_agreement,
+    unstructured_support
+):
     score = (
-        0.30 * data_completeness +
-        0.30 * evidence_strength +
-        0.20 * history_strength +
-        0.20 * consistency
+        0.25 * data_completeness +
+        0.30 * driver_strength +
+        0.15 * history_strength +
+        0.20 * source_agreement +
+        0.10 * unstructured_support
     )
     return round(max(0.0, min(1.0, score)), 2)
 
-def label_confidence(score):
+def label(score):
     if score >= 0.80:
         return "HIGH"
     if score >= 0.55:
         return "MEDIUM"
     return "LOW"
 
-def scenario_confidence(scenario):
-    return {
-        "normal": 0.84,
-        "low_confidence": 0.38,
-        "sparse_history": 0.42
-    }.get(scenario, 0.70)
+def reason(score, missing_source=False, sparse_history=False):
+    reasons = []
+    if missing_source:
+        reasons.append("a required source is incomplete")
+    if sparse_history:
+        reasons.append("historical baseline is too short")
+    if score < 0.55 and not reasons:
+        reasons.append("evidence is weak or conflicting")
+    return "; ".join(reasons) if reasons else "multiple independent signals agree"

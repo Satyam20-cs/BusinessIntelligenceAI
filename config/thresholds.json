@@ -1,6 +1,8 @@
 {
   "material_change_pct": 5,
   "critical_change_pct": 10,
-  "min_history_days_for_anomaly": 28,
-  "low_confidence_threshold": 0.55
+  "low_confidence_threshold": 0.55,
+  "min_history_days": 28,
+  "minimum_source_completeness": 0.8,
+  "minimum_driver_evidence": 0.6
 }

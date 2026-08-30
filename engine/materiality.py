@@ -1,9 +1,9 @@
-def classify_change(change_pct):
+def classify_change(change_pct, materiality_pct=5, critical_pct=10):
     magnitude = abs(change_pct)
-    if magnitude >= 10:
+    if magnitude >= critical_pct:
         return "CRITICAL"
-    if magnitude >= 5:
-        return "HIGH"
+    if magnitude >= materiality_pct:
+        return "MATERIAL"
     if magnitude >= 2:
-        return "MODERATE"
+        return "WATCH"
     return "NORMAL"

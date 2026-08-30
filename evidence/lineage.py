@@ -1,17 +1,39 @@
-def get_lineage():
+def lineage_rows():
     return [
-        {"output": "Revenue", "source": "sales.csv", "method": "Deterministic aggregation", "freshness": "10 min ago"},
-        {"output": "Region contribution", "source": "sales.csv", "method": "Period-over-period contribution analysis", "freshness": "10 min ago"},
-        {"output": "Inventory signal", "source": "inventory.csv", "method": "Period-over-period comparison", "freshness": "2 hours ago"},
-        {"output": "Customer complaint signal", "source": "customer_metrics.csv", "method": "Period-over-period comparison", "freshness": "35 min ago"},
-        {"output": "Confidence", "source": "analytics engine", "method": "Weighted evidence score", "freshness": "Live"},
-        {"output": "Narrative", "source": "verified analytics payload", "method": "LLM or deterministic fallback", "freshness": "Live"},
+        {
+            "claim": "Revenue movement",
+            "source": "sales.csv",
+            "method": "Equal-window aggregation",
+            "type": "deterministic"
+        },
+        {
+            "claim": "Regional contribution",
+            "source": "sales.csv",
+            "method": "Period-over-period contribution analysis",
+            "type": "deterministic"
+        },
+        {
+            "claim": "Inventory signal",
+            "source": "inventory.csv",
+            "method": "Period-over-period comparison",
+            "type": "deterministic"
+        },
+        {
+            "claim": "Customer themes",
+            "source": "customer_feedback.csv",
+            "method": "Theme extraction + sentiment heuristic",
+            "type": "unstructured analytics"
+        },
+        {
+            "claim": "Association tests",
+            "source": "sales + inventory + customer_metrics",
+            "method": "Pearson correlation",
+            "type": "statistical; not causal"
+        },
+        {
+            "claim": "Narrative",
+            "source": "verified analytics payload",
+            "method": "LLM synthesis",
+            "type": "generative AI"
+        }
     ]
-
-def evidence_summary():
-    return {
-        "data_completeness": 0.95,
-        "evidence_strength": 0.88,
-        "history_strength": 0.90,
-        "consistency": 0.92,
-    }

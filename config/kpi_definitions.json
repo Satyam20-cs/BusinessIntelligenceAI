@@ -1,112 +1,50 @@
 {
   "Revenue": {
-    "definition": "Total realized sales revenue after discounts and returns.",
     "formula": "sum(revenue)",
     "unit": "INR",
-    "frequency": "daily",
-    "warning_threshold_pct": 5,
-    "critical_threshold_pct": 10,
-    "drivers": [
+    "primary_source": "sales.csv",
+    "driver_dimensions": [
       "region",
-      "product",
-      "orders",
-      "inventory",
-      "customer_complaints"
-    ],
-    "sources": [
-      "sales",
-      "inventory",
-      "customer_metrics"
-    ],
-    "access": [
-      "Business Head",
-      "Business Analyst"
+      "product"
     ]
   },
   "Profit": {
-    "definition": "Revenue minus product cost and marketing spend.",
     "formula": "sum(revenue - product_cost - marketing_spend)",
     "unit": "INR",
-    "frequency": "daily",
-    "warning_threshold_pct": 5,
-    "critical_threshold_pct": 10,
-    "drivers": [
-      "revenue",
-      "marketing_spend",
-      "product_cost",
-      "region"
-    ],
-    "sources": [
-      "sales",
-      "customer_metrics"
-    ],
-    "access": [
-      "Business Head",
-      "Business Analyst"
+    "primary_source": "sales.csv",
+    "driver_dimensions": [
+      "region",
+      "product",
+      "marketing_spend"
     ]
   },
   "Orders": {
-    "definition": "Number of completed customer orders.",
     "formula": "sum(orders)",
     "unit": "orders",
-    "frequency": "daily",
-    "warning_threshold_pct": 5,
-    "critical_threshold_pct": 10,
-    "drivers": [
+    "primary_source": "sales.csv",
+    "driver_dimensions": [
       "region",
       "product",
-      "conversion_rate",
       "stockouts"
-    ],
-    "sources": [
-      "sales",
-      "inventory"
-    ],
-    "access": [
-      "Business Head",
-      "Business Analyst"
     ]
   },
   "Conversion Rate": {
-    "definition": "Completed orders divided by site sessions.",
     "formula": "sum(orders) / sum(sessions)",
     "unit": "%",
-    "frequency": "daily",
-    "warning_threshold_pct": 5,
-    "critical_threshold_pct": 10,
-    "drivers": [
+    "primary_source": "sales.csv",
+    "driver_dimensions": [
       "region",
-      "product",
-      "customer_complaints"
-    ],
-    "sources": [
-      "sales",
-      "customer_metrics"
-    ],
-    "access": [
-      "Business Head",
-      "Business Analyst"
+      "product"
     ]
   },
   "Return Rate": {
-    "definition": "Returned units divided by sold units.",
     "formula": "sum(returned_units) / sum(units_sold)",
     "unit": "%",
-    "frequency": "daily",
-    "warning_threshold_pct": 5,
-    "critical_threshold_pct": 10,
-    "drivers": [
-      "product",
+    "primary_source": "customer_metrics.csv",
+    "driver_dimensions": [
       "region",
-      "customer_complaints"
-    ],
-    "sources": [
-      "sales",
-      "customer_metrics"
-    ],
-    "access": [
-      "Business Head",
-      "Business Analyst"
+      "product",
+      "customer_feedback"
     ]
   }
 }

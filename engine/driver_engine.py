@@ -1,85 +1,88 @@
-import pandas as pd
 import numpy as np
+import pandas as pd
+from scipy.stats import pearsonr
 
-def revenue_drivers(sales: pd.DataFrame, inventory: pd.DataFrame, customer: pd.DataFrame):
-    # Region contribution to revenue decline
-    s = sales.copy()
-    s["month"] = s["date"].dt.to_period("M")
-    months = sorted(s["month"].unique())
-    prev_m, curr_m = months[-2], months[-1]
+def period_split(df, days=21):
+    d = df.copy()
+    latest = d["date"].max()
+    current_start = latest - pd.Timedelta(days=days - 1)
+    previous_end = current_start - pd.Timedelta(days=1)
+    previous_start = previous_end - pd.Timedelta(days=days - 1)
 
-    reg = s.groupby(["region", "month"])["revenue"].sum().unstack(fill_value=0)
-    reg["delta"] = reg[curr_m] - reg[prev_m]
-    negative = reg[reg["delta"] < 0].copy()
-    total_decline = abs(negative["delta"].sum())
-    negative["contribution_pct"] = np.where(
-        total_decline > 0, abs(negative["delta"]) / total_decline * 100, 0
+    prev = d[(d["date"] >= previous_start) & (d["date"] <= previous_end)]
+    curr = d[(d["date"] >= current_start) & (d["date"] <= latest)]
+    return prev, curr
+
+def contribution_table(df, dimension, metric="revenue", days=21):
+    prev, curr = period_split(df, days)
+    a = prev.groupby(dimension)[metric].sum().rename("previous")
+    b = curr.groupby(dimension)[metric].sum().rename("current")
+    out = pd.concat([a, b], axis=1).fillna(0)
+    out["delta"] = out["current"] - out["previous"]
+
+    total_negative = abs(out.loc[out["delta"] < 0, "delta"].sum())
+    out["contribution_pct"] = np.where(
+        out["delta"] < 0,
+        abs(out["delta"]) / max(total_negative, 1) * 100,
+        0
     )
-    region_rows = [
-        {"driver": f"{idx} region", "change": float(row["delta"]),
-         "contribution_pct": float(row["contribution_pct"])}
-        for idx, row in negative.sort_values("contribution_pct", ascending=False).head(5).iterrows()
-    ]
+    return out.sort_values("contribution_pct", ascending=False)
 
-    # Product contribution
-    prod = s.groupby(["product", "month"])["revenue"].sum().unstack(fill_value=0)
-    prod["delta"] = prod[curr_m] - prod[prev_m]
-    pneg = prod[prod["delta"] < 0].copy()
-    ptotal = abs(pneg["delta"].sum())
-    pneg["contribution_pct"] = np.where(ptotal > 0, abs(pneg["delta"]) / ptotal * 100, 0)
-    product_rows = [
-        {"driver": f"{idx}", "change": float(row["delta"]),
-         "contribution_pct": float(row["contribution_pct"])}
-        for idx, row in pneg.sort_values("contribution_pct", ascending=False).head(5).iterrows()
-    ]
+def correlation_signal(sales, inventory, customer, days=42):
+    # Daily regional signals; correlation is evidence of association, not causality.
+    s = sales.groupby("date").agg(
+        revenue=("revenue", "sum"),
+        orders=("orders", "sum")
+    )
+    i = inventory.groupby("date").agg(stockouts=("stockouts", "sum"))
+    c = customer.groupby("date").agg(complaints=("complaints", "sum"))
 
-    # Inventory signal
-    inv = inventory.copy()
-    inv["month"] = inv["date"].dt.to_period("M")
-    inv_month = inv.groupby("month").agg(stockouts=("stockouts", "sum"), stock_available=("stock_available", "mean"))
-    inv_signal = {}
-    if prev_m in inv_month.index and curr_m in inv_month.index:
-        inv_signal = {
-            "driver": "Inventory stockouts",
-            "previous": float(inv_month.loc[prev_m, "stockouts"]),
-            "current": float(inv_month.loc[curr_m, "stockouts"]),
-            "change_pct": float((inv_month.loc[curr_m, "stockouts"] - inv_month.loc[prev_m, "stockouts"]) /
-                                max(abs(inv_month.loc[prev_m, "stockouts"]), 1) * 100)
-        }
+    merged = s.join(i, how="inner").join(c, how="inner").tail(days).dropna()
+    result = []
 
-    # Customer complaints signal
-    c = customer.copy()
-    c["month"] = c["date"].dt.to_period("M")
-    cm = c.groupby("month").agg(complaints=("complaints", "sum"), returned_units=("returned_units", "sum"))
-    complaint_signal = {}
-    if prev_m in cm.index and curr_m in cm.index:
-        complaint_signal = {
-            "driver": "Customer complaints",
-            "previous": float(cm.loc[prev_m, "complaints"]),
-            "current": float(cm.loc[curr_m, "complaints"]),
-            "change_pct": float((cm.loc[curr_m, "complaints"] - cm.loc[prev_m, "complaints"]) /
-                                max(abs(cm.loc[prev_m, "complaints"]), 1) * 100)
-        }
+    for x, y, label in [
+        ("stockouts", "revenue", "stockouts ↔ revenue"),
+        ("complaints", "revenue", "complaints ↔ revenue"),
+        ("stockouts", "orders", "stockouts ↔ orders")
+    ]:
+        if len(merged) >= 8 and merged[x].nunique() > 1 and merged[y].nunique() > 1:
+            r, p = pearsonr(merged[x], merged[y])
+            result.append({
+                "relationship": label,
+                "pearson_r": round(float(r), 3),
+                "p_value": round(float(p), 4),
+                "interpretation": "association only; not proof of causality"
+            })
+    return pd.DataFrame(result)
+
+def build_revenue_driver_pack(sales, inventory, customer, days=21):
+    region = contribution_table(sales, "region", "revenue", days).head(5).reset_index()
+    product = contribution_table(sales, "product", "revenue", days).head(5).reset_index()
+
+    inv_prev, inv_curr = period_split(inventory, days)
+    stockouts_prev = inv_prev["stockouts"].sum()
+    stockouts_curr = inv_curr["stockouts"].sum()
+    stockout_change = ((stockouts_curr - stockouts_prev) /
+                       max(abs(stockouts_prev), 1)) * 100
+
+    cust_prev, cust_curr = period_split(customer, days)
+    complaints_prev = cust_prev["complaints"].sum()
+    complaints_curr = cust_curr["complaints"].sum()
+    complaint_change = ((complaints_curr - complaints_prev) /
+                        max(abs(complaints_prev), 1)) * 100
 
     return {
-        "region_drivers": region_rows,
-        "product_drivers": product_rows,
-        "inventory_signal": inv_signal,
-        "complaint_signal": complaint_signal,
+        "regions": region,
+        "products": product,
+        "inventory": {
+            "previous": float(stockouts_prev),
+            "current": float(stockouts_curr),
+            "change_pct": float(stockout_change)
+        },
+        "complaints": {
+            "previous": float(complaints_prev),
+            "current": float(complaints_curr),
+            "change_pct": float(complaint_change)
+        },
+        "correlations": correlation_signal(sales, inventory, customer, days=42)
     }
-
-def build_driver_tree(drivers):
-    region = drivers["region_drivers"][0] if drivers["region_drivers"] else None
-    product = drivers["product_drivers"][0] if drivers["product_drivers"] else None
-    tree = [
-        {"level": 0, "label": "Revenue ↓", "parent": None},
-    ]
-    if region:
-        tree.append({"level": 1, "label": f"{region['driver']} ({region['contribution_pct']:.0f}% contribution)", "parent": "Revenue ↓"})
-    if product:
-        tree.append({"level": 1, "label": f"{product['driver']} ({product['contribution_pct']:.0f}% contribution)", "parent": "Revenue ↓"})
-    if drivers["inventory_signal"]:
-        tree.append({"level": 1, "label": "Inventory stockouts ↑", "parent": "Revenue ↓"})
-    if drivers["complaint_signal"]:
-        tree.append({"level": 1, "label": "Customer complaints ↑", "parent": "Revenue ↓"})
-    return tree

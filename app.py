@@ -1,37 +1,37 @@
-import os
-from pathlib import Path
 import pandas as pd
 import plotly.express as px
 import streamlit as st
 from dotenv import load_dotenv
 
 from utils.io import load_all
-from engine.kpi_engine import monthly_kpis, compare_periods
-from engine.driver_engine import revenue_drivers
+from engine.kpi_engine import calculate_kpis, compare_kpis
 from engine.materiality import classify_change
-from engine.confidence_engine import scenario_confidence, label_confidence
-from engine.action_engine import recommend_action
-from evidence.lineage import get_lineage, evidence_summary
-from ai.narrative import generate_narrative
+from engine.driver_engine import build_revenue_driver_pack
+from engine.reconciliation import reconcile_sources, source_completeness
+from engine.unstructured_engine import extract_themes
+from engine.confidence_engine import confidence_score, label, reason
+from engine.action_engine import recommend_actions
+from evidence.lineage import lineage_rows
 from feedback.feedback import save_feedback, load_feedback
-from telemetry.metrics import make_telemetry
+from ai.narrative import generate
+from telemetry.metrics import make
 
 load_dotenv()
 
 st.set_page_config(
     page_title="InsightX AI",
     page_icon="📊",
-    layout="wide",
-    initial_sidebar_state="expanded"
+    layout="wide"
 )
 
 st.markdown("""
 <style>
-.main-title {font-size: 38px; font-weight: 800; margin-bottom: 0;}
-.subtitle {color: #6b7280; font-size: 16px;}
-.kpi-card {padding: 18px; border-radius: 14px; background: #f7f7fb; border: 1px solid #e5e7eb;}
-.badge {padding: 5px 10px; border-radius: 12px; background: #eee; font-weight: 700;}
-.small {font-size: 12px; color: #6b7280;}
+.block-container {padding-top: 1.5rem; max-width: 1400px;}
+.hero {padding: 20px 24px; border-radius: 18px; background: linear-gradient(90deg,#111827,#312e81); color: white;}
+.hero h1 {margin: 0; font-size: 38px;}
+.hero p {margin: 6px 0 0; opacity: .82;}
+.card {padding: 16px; border: 1px solid #e5e7eb; border-radius: 16px; background: #ffffff;}
+.muted {color: #6b7280; font-size: 13px;}
 </style>
 """, unsafe_allow_html=True)
 
@@ -40,259 +40,311 @@ def get_data():
     return load_all()
 
 data = get_data()
-sales, inventory, customer = data["sales"], data["inventory"], data["customer_metrics"]
+sales = data["sales"]
+inventory = data["inventory"]
+customer = data["customer"]
+feedback_text = data["feedback_text"]
 
-monthly = monthly_kpis(sales, customer)
-comparison = compare_periods(monthly)
-drivers = revenue_drivers(sales, inventory, customer)
+st.markdown("""
+<div class="hero">
+<h1>BusinessIntelligence.ai</h1>
+<p>InsightX AI — Detect → Explain → Connect → Recommend → Learn</p>
+</div>
+""", unsafe_allow_html=True)
 
-# Sidebar
-st.sidebar.markdown("## InsightX AI")
-st.sidebar.caption("BusinessIntelligence.ai — KPI intelligence-to-action")
-
-persona = st.sidebar.selectbox(
-    "Persona",
-    ["Business Head", "Business Analyst"]
-)
-
+st.sidebar.header("InsightX Controls")
+persona = st.sidebar.selectbox("Persona", ["Business Head", "Business Analyst"])
 scenario = st.sidebar.selectbox(
     "Demo scenario",
     ["normal", "low_confidence", "sparse_history"],
     format_func=lambda x: {
-        "normal": "Normal — material revenue decline",
-        "low_confidence": "Low confidence — missing inventory",
+        "normal": "Normal — sufficient evidence",
+        "low_confidence": "Low confidence — missing inventory evidence",
         "sparse_history": "Sparse history — new product"
     }[x]
 )
 
 page = st.sidebar.radio(
-    "Navigate",
+    "Module",
     [
         "Executive Dashboard",
-        "InsightX Investigation",
+        "Insight Investigation",
         "Evidence & Lineage",
         "Recommended Actions",
         "Governance & Feedback"
     ]
 )
 
-# Header
-st.markdown('<div class="main-title">BusinessIntelligence.ai</div>', unsafe_allow_html=True)
-st.markdown('<div class="subtitle">InsightX AI — Detect → Explain → Connect → Recommend → Learn</div>', unsafe_allow_html=True)
-st.divider()
+kpi_df = calculate_kpis(sales, customer, days=21)
+comparison = compare_kpis(kpi_df)
+driver_pack = build_revenue_driver_pack(sales, inventory, customer, days=21)
+recon = reconcile_sources(sales, inventory, customer, feedback_text)
+_, theme_summary = extract_themes(feedback_text)
 
-# KPI helper
-def fmt(name, value):
-    if name in ["Revenue", "Profit"]:
-        return f"₹{value/1e7:.2f} Cr"
-    if name == "Conversion Rate" or name == "Return Rate":
-        return f"{value:.2f}%"
-    return f"{value:,.0f}"
+# Confidence is scenario-adjusted for the competition demo.
+base_conf = confidence_score(
+    data_completeness=min(
+        source_completeness(sales),
+        source_completeness(inventory),
+        source_completeness(customer)
+    ),
+    driver_strength=0.88,
+    history_strength=0.90,
+    source_agreement=0.87,
+    unstructured_support=0.80
+)
 
-# Scenario adjustment
-conf = scenario_confidence(scenario)
+if scenario == "low_confidence":
+    conf = 0.38
+elif scenario == "sparse_history":
+    conf = 0.42
+else:
+    conf = max(0.80, base_conf)
+
+revenue = comparison["Revenue"]
+severity = classify_change(revenue["change_pct"])
+conf_label = label(conf)
+
+def money(v):
+    return f"₹{v/1e7:.2f} Cr"
 
 if page == "Executive Dashboard":
     st.subheader("Business Health")
+
     cols = st.columns(5)
-    for i, (name, info) in enumerate(comparison.items()):
-        with cols[i]:
-            st.markdown('<div class="kpi-card">', unsafe_allow_html=True)
-            st.markdown(f"**{name}**")
-            st.markdown(f"### {fmt(name, info['current'])}")
-            arrow = "↓" if info["change_pct"] < 0 else "↑"
-            st.write(f"{arrow} {abs(info['change_pct']):.1f}% vs previous period")
-            st.markdown('</div>', unsafe_allow_html=True)
+    for col, (name, item) in zip(cols, comparison.items()):
+        with col:
+            value = money(item["current"]) if name in ["Revenue", "Profit"] else (
+                f"{item['current']:.2f}%" if "Rate" in name else f"{item['current']:,.0f}"
+            )
+            arrow = "↓" if item["change_pct"] < 0 else "↑"
+            st.metric(name, value, f"{arrow} {abs(item['change_pct']):.1f}%")
 
-    st.subheader("Material KPI Movements")
-    revenue_info = comparison["Revenue"]
-    severity = classify_change(revenue_info["change_pct"])
+    st.divider()
 
-    c1, c2 = st.columns([2, 1])
-    with c1:
-        fig = px.line(monthly, x="month", y="revenue", markers=True, title="Revenue trend")
+    left, right = st.columns([1.7, 1])
+    with left:
+        st.subheader("Revenue trend")
+        daily = sales.groupby("date", as_index=False)["revenue"].sum()
+        fig = px.line(daily, x="date", y="revenue", markers=False)
+        fig.update_layout(height=330, margin=dict(l=10,r=10,t=20,b=10))
         st.plotly_chart(fig, use_container_width=True)
-    with c2:
-        st.error(f"Revenue {revenue_info['change_pct']:.1f}%")
-        st.write(f"Severity: **{severity}**")
-        st.write(f"Confidence: **{conf:.0%}**")
-        if st.button("Investigate Revenue", type="primary"):
-            st.session_state["goto_investigation"] = True
-            st.info("Use the sidebar to open InsightX Investigation.")
 
-    st.subheader("Top signals")
-    top = drivers["region_drivers"][:3]
-    if top:
-        df = pd.DataFrame(top)
-        fig2 = px.bar(df, x="contribution_pct", y="driver", orientation="h",
-                      title="Regional contribution to revenue decline")
+    with right:
+        st.subheader("Material movement")
+        st.error(f"Revenue {revenue['change_pct']:.1f}%")
+        st.write(f"**Severity:** {severity}")
+        st.write(f"**Confidence:** {conf:.0%} — {conf_label}")
+        st.write("**Comparison:** equal 21-day windows")
+        st.caption("InsightX avoids partial-month bias by comparing equal-length periods.")
+
+    st.subheader("Top regional contributors")
+    region_df = driver_pack["regions"].copy()
+    if not region_df.empty:
+        region_df["region"] = region_df["region"].astype(str)
+        fig2 = px.bar(
+            region_df.head(4),
+            x="contribution_pct",
+            y="region",
+            orientation="h",
+            text_auto=".1f"
+        )
+        fig2.update_layout(height=280, xaxis_title="Share of negative revenue movement (%)", yaxis_title="")
         st.plotly_chart(fig2, use_container_width=True)
 
-elif page == "InsightX Investigation":
+elif page == "Insight Investigation":
     st.subheader("InsightX Investigation")
-    st.caption("Quantitative calculations are performed by the analytics engine; the LLM is only used for narrative synthesis.")
 
-    info = comparison["Revenue"]
     c1, c2, c3 = st.columns(3)
-    c1.metric("Revenue", fmt("Revenue", info["current"]), f"{info['change_pct']:.1f}%")
-    c2.metric("Severity", classify_change(info["change_pct"]))
-    c3.metric("Confidence", f"{conf:.0%}", label_confidence(conf))
+    c1.metric("Revenue movement", f"{revenue['change_pct']:.1f}%")
+    c2.metric("Materiality", severity)
+    c3.metric("Confidence", f"{conf:.0%}", conf_label)
 
-    st.markdown("### 1. DETECT")
-    st.write(f"Revenue moved by **{info['change_pct']:.1f}%** compared with the previous period.")
+    st.markdown("### 1 — DETECT")
+    st.write(
+        f"Revenue changed from **{money(revenue['previous'])}** to "
+        f"**{money(revenue['current'])}**, a **{revenue['change_pct']:.1f}%** movement "
+        "over equal-length periods."
+    )
 
-    st.markdown("### 2. EXPLAIN")
-    top_drivers = []
-    for d in drivers["region_drivers"][:2]:
-        top_drivers.append(d)
-    for d in drivers["product_drivers"][:2]:
-        top_drivers.append(d)
+    st.markdown("### 2 — EXPLAIN")
+    top_region = driver_pack["regions"].head(2)
+    top_product = driver_pack["products"].head(2)
 
-    if scenario == "low_confidence":
-        st.warning("Inventory evidence is intentionally incomplete in this demo scenario. InsightX should not make a definitive inventory attribution.")
-    elif scenario == "sparse_history":
-        st.warning("This scenario is intended to demonstrate abstention for a newly launched product with limited historical evidence.")
+    top_names = []
+    for _, row in top_region.iterrows():
+        top_names.append(f"{row['region']} region")
+    for _, row in top_product.iterrows():
+        top_names.append(str(row["product"]))
 
     payload = {
         "kpi": "Revenue",
-        "current": info["current"],
-        "previous": info["previous"],
-        "change_pct": info["change_pct"],
-        "top_drivers": top_drivers,
+        "change_pct": revenue["change_pct"],
         "confidence": conf,
+        "top_drivers": top_names,
         "scenario": scenario
     }
 
-    narrative, meta = generate_narrative(payload, persona)
-    st.markdown("### InsightX narrative")
-    st.info(narrative)
-
-    st.markdown("### 3. CONNECT")
-    st.write("Driver chain: **Region/Product performance → Orders → Inventory/Customer signals → Revenue**")
-
-    if top_drivers:
-        tree_df = pd.DataFrame({
-            "Driver": [d["driver"] for d in top_drivers],
-            "Contribution (%)": [d["contribution_pct"] for d in top_drivers]
-        })
-        st.dataframe(tree_df, use_container_width=True, hide_index=True)
-
-    if drivers["inventory_signal"]:
-        st.write(
-            f"Inventory stockouts changed from **{drivers['inventory_signal']['previous']:.0f}** "
-            f"to **{drivers['inventory_signal']['current']:.0f}** "
-            f"({drivers['inventory_signal']['change_pct']:.1f}%)."
+    if scenario == "low_confidence":
+        st.warning(
+            "ABSTENTION: Inventory evidence is intentionally unavailable for this scenario. "
+            "InsightX will not make a definitive inventory attribution."
+        )
+    elif scenario == "sparse_history":
+        st.warning(
+            "ABSTENTION: The selected product is treated as a new launch with insufficient historical baseline. "
+            "InsightX will not make a strong trend claim."
         )
 
-    st.markdown("### 4. RECOMMEND")
-    action = recommend_action(drivers, conf)
-    st.success(action["action"])
-    st.write(f"**Owner:** {action['owner']}  |  **Expected impact:** {action['expected_impact']}")
-    st.write(f"**Monitoring:** {action['monitoring']}")
+    narrative, meta = generate(payload, persona)
+    st.info(narrative)
 
-    st.markdown("### 5. LEARN")
-    col_a, col_b = st.columns(2)
-    with col_a:
-        if st.button("👍 Insight is correct"):
-            save_feedback("correct", f"{persona} accepted the revenue insight.")
+    st.markdown("### 3 — CONNECT")
+    col1, col2 = st.columns(2)
+
+    with col1:
+        st.write("**Regional contribution**")
+        display = top_region[["region","previous","current","delta","contribution_pct"]].copy()
+        st.dataframe(display, use_container_width=True, hide_index=True)
+
+        st.write("**Product contribution**")
+        display2 = top_product[["product","previous","current","delta","contribution_pct"]].copy()
+        st.dataframe(display2, use_container_width=True, hide_index=True)
+
+    with col2:
+        inv = driver_pack["inventory"]
+        comp = driver_pack["complaints"]
+        st.metric("Inventory stockouts", f"{inv['current']:,.0f}", f"{inv['change_pct']:.1f}%")
+        st.metric("Customer complaints", f"{comp['current']:,.0f}", f"{comp['change_pct']:.1f}%")
+
+        st.write("**Unstructured customer signals**")
+        st.dataframe(theme_summary.head(6), use_container_width=True, hide_index=True)
+
+    st.markdown("### Statistical signals")
+    corr = driver_pack["correlations"]
+    if corr.empty:
+        st.caption("Not enough overlapping daily observations for correlation testing.")
+    else:
+        st.dataframe(corr, use_container_width=True, hide_index=True)
+        st.caption("Correlation is treated as association, not proof of causality.")
+
+    st.markdown("### 4 — RECOMMEND")
+    actions = recommend_actions(driver_pack, conf)
+    st.dataframe(pd.DataFrame(actions), use_container_width=True, hide_index=True)
+
+    st.markdown("### 5 — LEARN")
+    a, b = st.columns(2)
+    with a:
+        if st.button("👍 Mark insight correct", use_container_width=True):
+            save_feedback("accepted", "Revenue investigation accepted.", persona)
             st.success("Feedback recorded.")
-    with col_b:
-        if st.button("👎 Insight needs correction"):
-            st.session_state["show_feedback_form"] = True
+    with b:
+        if st.button("👎 Mark insight incorrect", use_container_width=True):
+            st.session_state["feedback_open"] = True
 
-    if st.session_state.get("show_feedback_form"):
-        note = st.text_area("What should be corrected?")
+    if st.session_state.get("feedback_open"):
+        note = st.text_area("What should InsightX change?")
         if st.button("Save correction"):
-            save_feedback("correction", note)
-            st.success("Correction stored for the learning loop.")
+            save_feedback("correction", note, persona)
+            st.success("Correction stored.")
+            st.session_state["feedback_open"] = False
 
-    telemetry = make_telemetry(meta)
+    t = make(
+        meta["latency_ms"],
+        meta["model_calls"],
+        meta["tokens"],
+        meta["provider"]
+    )
     st.caption(
-        f"Telemetry — provider: {telemetry.provider} | latency: {telemetry.latency_ms} ms | "
-        f"model calls: {telemetry.model_calls} | tokens: {telemetry.tokens_estimate} | "
-        f"estimated cost: ${telemetry.estimated_cost_usd:.4f}"
+        f"Telemetry — provider: {t.provider} | latency: {t.latency_ms} ms | "
+        f"LLM calls: {t.model_calls} | tokens: {t.tokens} | "
+        f"estimated cost: ${t.estimated_cost_usd:.4f}"
     )
 
 elif page == "Evidence & Lineage":
     st.subheader("Evidence & Lineage")
-    st.write("Every important statement should be traceable to a source and analytical method.")
 
-    summary = evidence_summary()
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Data completeness", f"{summary['data_completeness']:.0%}")
-    c2.metric("Evidence strength", f"{summary['evidence_strength']:.0%}")
-    c3.metric("History strength", f"{summary['history_strength']:.0%}")
-    c4.metric("Consistency", f"{summary['consistency']:.0%}")
+    st.write(
+        "InsightX separates deterministic analytics from generative AI. "
+        "The LLM receives a verified payload; it does not calculate the KPI."
+    )
 
-    st.markdown("### Source lineage")
-    st.dataframe(pd.DataFrame(get_lineage()), use_container_width=True, hide_index=True)
+    st.markdown("### Source reconciliation")
+    st.dataframe(recon["sources"], use_container_width=True, hide_index=True)
 
-    st.markdown("### LLM vs non-LLM")
+    st.write(
+        f"Sales→Inventory dimension overlap: **{recon['dimension_overlap']['sales_inventory_pct']:.1f}%**  |  "
+        f"Sales→Customer dimension overlap: **{recon['dimension_overlap']['sales_customer_pct']:.1f}%**"
+    )
+
+    st.markdown("### Lineage")
+    st.dataframe(pd.DataFrame(lineage_rows()), use_container_width=True, hide_index=True)
+
+    st.markdown("### Analytics boundary")
     st.code("""
-Revenue calculation        -> Python/Pandas
-KPI comparison             -> deterministic analytics
-Driver contribution        -> contribution analysis
-Confidence score           -> weighted evidence rules
-Evidence/lineage           -> deterministic metadata
-Narrative                   -> LLM (optional)
-Persona adaptation          -> LLM (optional)
-Action structure            -> business rules + LLM wording
-""")
+Python / Pandas
+    ├── KPI definitions
+    ├── Equal-period comparison
+    ├── Materiality
+    ├── Driver contribution
+    ├── Source reconciliation
+    ├── Correlation tests
+    ├── Confidence
+    └── Action structure
 
-    st.markdown("### Data freshness")
-    freshness = pd.DataFrame([
-        ["sales.csv", "10 min ago", "Fresh"],
-        ["inventory.csv", "2 hours ago", "Usable; slower refresh"],
-        ["customer_metrics.csv", "35 min ago", "Fresh"]
-    ], columns=["Source", "Last refresh", "Status"])
-    st.dataframe(freshness, use_container_width=True, hide_index=True)
+LLM
+    ├── Natural-language synthesis
+    └── Persona-specific wording
+
+Rule:
+LLM never becomes the quantitative source of truth.
+""")
 
 elif page == "Recommended Actions":
     st.subheader("Recommended Actions")
-    action = recommend_action(drivers, conf)
 
-    st.markdown("## Driver → Lever → Action → Impact → Owner → Confidence → Monitoring")
-
-    rows = [
-        ("Driver", action["driver"]),
-        ("Controllable lever", action["lever"]),
-        ("Recommended action", action["action"]),
-        ("Expected impact", action["expected_impact"]),
-        ("Owner", action["owner"]),
-        ("Confidence", f"{action['confidence']:.0%}"),
-        ("Monitoring plan", action["monitoring"])
-    ]
-    st.table(pd.DataFrame(rows, columns=["Component", "InsightX recommendation"]))
+    actions = recommend_actions(driver_pack, conf)
+    for action in actions:
+        st.markdown(f"#### {action['priority']} — {action['driver']}")
+        st.write(f"**Lever:** {action['lever']}")
+        st.success(action["action"])
+        st.write(f"**Owner:** {action['owner']}")
+        st.write(f"**Expected impact:** {action['expected_impact']}")
+        st.write(f"**Monitoring:** {action['monitoring']}")
+        st.divider()
 
     if conf < 0.55:
-        st.warning("Because confidence is low, InsightX recommends validation rather than a major corrective action.")
+        st.warning(
+            "Because confidence is LOW, the recommended action is data validation rather than an aggressive business intervention."
+        )
 
 elif page == "Governance & Feedback":
-    st.subheader("Governance, Security & Learning")
+    st.subheader("Governance & Feedback")
 
-    st.markdown("### Role-based access demo")
+    st.markdown("### Persona access")
     if persona == "Business Head":
-        st.success("Business Head view: executive KPIs, top drivers, business impact and actions.")
+        st.success("Executive view: impact, top drivers, decision and owner.")
     else:
-        st.success("Business Analyst view: evidence, methods, lineage, confidence and analytical detail.")
+        st.success("Analyst view: evidence, methods, uncertainty and lineage.")
 
-    st.markdown("### Feedback loop")
+    st.markdown("### Feedback history")
     feedback = load_feedback()
     if feedback:
-        st.dataframe(pd.DataFrame(feedback).tail(10), use_container_width=True, hide_index=True)
+        st.dataframe(pd.DataFrame(feedback).tail(20), use_container_width=True, hide_index=True)
     else:
-        st.info("No feedback yet. Use the Investigation page to accept or correct an insight.")
+        st.info("No feedback recorded yet.")
 
-    st.markdown("### Runtime telemetry")
-    st.metric("Tracked insights", max(1, len(feedback)))
-    st.metric("LLM calls in this session", "0–1 per generated narrative")
-    st.metric("Architecture", "Analytics-first, LLM-assisted")
-
-    st.markdown("### Safety rule")
+    st.markdown("### Guardrails")
     st.warning(
-        "InsightX is decision support, not an autonomous decision-maker. "
-        "It should abstain when evidence is incomplete, contradictory or too sparse."
+        "InsightX is a decision-support system. It must abstain when evidence is incomplete, "
+        "contradictory or too sparse."
+    )
+
+    st.markdown("### Prototype architecture")
+    st.write(
+        "Data sources → Reconciliation → KPI Engine → Materiality → Driver Engine → "
+        "Confidence → Evidence → Recommendation → LLM Narrative → Persona → Feedback"
     )
 
 st.sidebar.divider()
-st.sidebar.caption("Prototype data is synthetic and intentionally engineered for the competition demo.")
+st.sidebar.caption("Prototype uses synthetic data for controlled demonstration.")
