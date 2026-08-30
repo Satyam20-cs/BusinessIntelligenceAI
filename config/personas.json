@@ -1,10 +1,25 @@
 {
   "Business Head": {
-    "focus": "business impact, top drivers, decision and owner",
-    "max_words": 110
+    "focus": [
+      "business impact",
+      "top contributors",
+      "recommended decision",
+      "owner",
+      "monitoring"
+    ],
+
+    "narrative_style": "concise executive summary"
   },
+
   "Business Analyst": {
-    "focus": "evidence, methods, uncertainty, alternatives and lineage",
-    "max_words": 180
+    "focus": [
+      "evidence",
+      "analytical method",
+      "uncertainty",
+      "source lineage",
+      "statistical association"
+    ],
+
+    "narrative_style": "analytical explanation"
   }
 }

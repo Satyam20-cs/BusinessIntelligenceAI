@@ -1,67 +1,140 @@
-# InsightX AI V2
+# InsightX
 
-This version is the next prototype step for the BusinessIntelligence.ai Round 2 problem.
+BusinessIntelligence.ai — AI-powered KPI storytelling
+and decision-support prototype.
 
-## Improvements over the earlier skeleton
+## Core workflow
 
-1. Equal-length 21-day KPI comparison instead of comparing a partial month with a full month.
-2. Explicit source reconciliation.
-3. Structured + unstructured data.
-4. Customer feedback theme extraction.
-5. Correlation analysis with an explicit non-causal interpretation.
-6. Evidence lineage showing which component produced each claim.
-7. Confidence is based on multiple evidence dimensions.
-8. Low-confidence and sparse-history abstention.
-9. Persona-specific narratives.
-10. Recommendation objects with driver, lever, action, owner and monitoring.
-11. Feedback persistence.
-12. Runtime LLM telemetry.
-13. Analytics-first architecture: the LLM never calculates KPI values.
+Detect → Explain → Connect → Recommend → Learn
 
-## Windows setup
+## What InsightX does
 
-```powershell
+InsightX goes beyond a traditional dashboard.
+
+Instead of only showing that a KPI changed, it attempts to explain:
+
+1. What changed?
+2. What are the strongest supported contributors?
+3. What other business signals connect to the movement?
+4. How confident is the explanation?
+5. What should the business investigate or do next?
+
+## Architecture
+
+Data Sources
+    ↓
+Source Reconciliation
+    ↓
+KPI Engine
+    ↓
+Materiality
+    ↓
+Driver Analysis
+    ↓
+Unstructured Feedback
+    ↓
+Confidence Engine
+    ↓
+Evidence / Lineage
+    ↓
+Recommendation Engine
+    ↓
+Narrative Layer
+    ↓
+Persona
+    ↓
+Feedback
+
+## Analytics-first principle
+
+The LLM does not calculate KPIs.
+
+Quantitative results are produced by deterministic
+Python/Pandas analytics.
+
+The language model only converts the verified analytics
+payload into concise business language.
+
+## Data
+
+The prototype uses synthetic retail data.
+
+Files:
+
+- sales.csv
+- inventory.csv
+- customer_metrics.csv
+- customer_feedback.csv
+
+## Installation
+
+Create a virtual environment:
+
 python -m venv .venv
+
+Activate:
+
 .venv\Scripts\Activate.ps1
+
+Install:
+
 pip install -r requirements.txt
+
+Generate data:
+
 python generate_data.py
+
+Run:
+
 streamlit run app.py
-```
 
-## Optional OpenAI setup
+## Optional OpenAI
 
-Copy `.env.example` to `.env` and set:
+Copy:
 
-```text
+.env.example
+
+to:
+
+.env
+
+Then add:
+
 OPENAI_API_KEY=your_key
+
 OPENAI_MODEL=gpt-5.6
-```
 
-The application still works without the key using a deterministic fallback narrative.
+The application still works without the API key.
 
-## Main demo
+## Demo scenarios
 
-Normal:
-- Executive Dashboard
-- Revenue investigation
-- Show region/product contributions
-- Show stockout and customer-feedback signals
-- Show correlation table
-- Show recommendation
-- Open Evidence & Lineage
+### Normal
 
-Low confidence:
-- Switch scenario to Low confidence
-- Show abstention
+Shows:
 
-Sparse history:
-- Switch scenario to Sparse history
-- Show abstention
+- KPI movement
+- regional contribution
+- product contribution
+- inventory signals
+- customer signals
+- correlation
+- confidence
+- recommendations
 
-Persona:
-- Business Head → concise business impact
-- Business Analyst → evidence and uncertainty
+### Low confidence
 
-## Important
+Demonstrates that InsightX does not make a
+strong conclusion when evidence is insufficient.
 
-The data is synthetic. That is intentional for the competition prototype.
+### Sparse history
+
+Demonstrates that InsightX avoids strong conclusions
+when historical evidence is insufficient.
+
+## Important principle
+
+Correlation is treated as association,
+not proof of causality.
+
+InsightX supports human decision-making;
+it does not replace human judgment.

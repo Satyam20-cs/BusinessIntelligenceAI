@@ -8,43 +8,44 @@
       "product"
     ]
   },
+
   "Profit": {
     "formula": "sum(revenue - product_cost - marketing_spend)",
     "unit": "INR",
     "primary_source": "sales.csv",
     "driver_dimensions": [
       "region",
-      "product",
-      "marketing_spend"
+      "product"
     ]
   },
+
   "Orders": {
     "formula": "sum(orders)",
-    "unit": "orders",
-    "primary_source": "sales.csv",
-    "driver_dimensions": [
-      "region",
-      "product",
-      "stockouts"
-    ]
-  },
-  "Conversion Rate": {
-    "formula": "sum(orders) / sum(sessions)",
-    "unit": "%",
+    "unit": "count",
     "primary_source": "sales.csv",
     "driver_dimensions": [
       "region",
       "product"
     ]
   },
+
+  "Conversion Rate": {
+    "formula": "sum(orders) / sum(sessions) * 100",
+    "unit": "percent",
+    "primary_source": "sales.csv",
+    "driver_dimensions": [
+      "region",
+      "product"
+    ]
+  },
+
   "Return Rate": {
-    "formula": "sum(returned_units) / sum(units_sold)",
-    "unit": "%",
+    "formula": "sum(returned_units) / sum(units_sold) * 100",
+    "unit": "percent",
     "primary_source": "customer_metrics.csv",
     "driver_dimensions": [
       "region",
-      "product",
-      "customer_feedback"
+      "product"
     ]
   }
 }

@@ -1,14 +1,22 @@
 {
   "normal": {
-    "label": "Normal \u2014 sufficient evidence",
-    "confidence": 0.86
+    "label": "Normal",
+    "description": "Sufficient evidence is available.",
+    "confidence": 0.84,
+    "abstain": false
   },
+
   "low_confidence": {
-    "label": "Low confidence \u2014 missing inventory evidence",
-    "confidence": 0.38
+    "label": "Low confidence",
+    "description": "Required evidence is incomplete.",
+    "confidence": 0.38,
+    "abstain": true
   },
+
   "sparse_history": {
-    "label": "Sparse history \u2014 new product",
-    "confidence": 0.42
+    "label": "Sparse history",
+    "description": "Historical baseline is insufficient.",
+    "confidence": 0.42,
+    "abstain": true
   }
 }
